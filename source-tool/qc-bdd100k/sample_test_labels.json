@@ -1,0 +1,222 @@
+[
+  {
+    "name": "0000f77c-6257be58.jpg",
+    "labels": [
+      {
+        "id": "1001",
+        "category": "car",
+        "attributes": {
+          "occluded": false,
+          "truncated": false,
+          "trafficLightColor": "none"
+        },
+        "box2d": {
+          "x1": 150.0,
+          "y1": 200.0,
+          "x2": 350.0,
+          "y2": 380.0
+        }
+      },
+      {
+        "id": "1002",
+        "category": "pedestrian",
+        "attributes": {
+          "occluded": true,
+          "truncated": false
+        },
+        "box2d": {
+          "x1": 500.0,
+          "y1": 210.0,
+          "x2": 530.0,
+          "y2": 320.0
+        },
+        "poly2d": [
+          {
+            "vertices": [
+              [500.0, 210.0],
+              [530.0, 210.0],
+              [530.0, 320.0],
+              [500.0, 320.0]
+            ],
+            "types": "LLLL",
+            "closed": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "0001a23b-7412ca19.jpg",
+    "labels": [
+      {
+        "id": "2001",
+        "category": "car",
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "box2d": {
+          "x1": -15.0,
+          "y1": 100.0,
+          "x2": 1350.0,
+          "y2": 500.0
+        }
+      },
+      {
+        "id": "2002",
+        "category": "traffic sign",
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "box2d": {
+          "x1": 200.0,
+          "y1": 200.0,
+          "x2": 202.0,
+          "y2": 203.0
+        }
+      },
+      {
+        "id": "2003",
+        "category": "truck",
+        "attributes": {},
+        "box2d": {
+          "x1": 400.0,
+          "y1": 300.0,
+          "x2": 600.0,
+          "y2": 450.0
+        }
+      }
+    ]
+  },
+  {
+    "name": "0002c89d-9831fb22.jpg",
+    "labels": [
+      {
+        "id": "3001",
+        "category": "bus",
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "box2d": {
+          "x1": 100.0,
+          "y1": 150.0,
+          "x2": 400.0,
+          "y2": 350.0
+        }
+      },
+      {
+        "id": "3002",
+        "category": "bus",
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "box2d": {
+          "x1": 102.0,
+          "y1": 151.0,
+          "x2": 398.0,
+          "y2": 349.0
+        }
+      },
+      {
+        "id": "3003",
+        "category": "rider",
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "box2d": {
+          "x1": 600.0,
+          "y1": 200.0,
+          "x2": 700.0,
+          "y2": 350.0
+        },
+        "poly2d": [
+          {
+            "vertices": [
+              [600.0, 200.0],
+              [700.0, 350.0],
+              [600.0, 350.0],
+              [700.0, 200.0]
+            ],
+            "types": "LLLL",
+            "closed": true
+          }
+        ]
+      },
+      {
+        "id": "3004",
+        "category": "car",
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "box2d": {
+          "x1": 800.0,
+          "y1": 400.0,
+          "x2": 950.0,
+          "y2": 520.0
+        },
+        "poly2d": [
+          {
+            "vertices": [
+              [100.0, 100.0],
+              [150.0, 100.0],
+              [150.0, 150.0],
+              [100.0, 150.0]
+            ],
+            "types": "LLLL",
+            "closed": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "0003d45e-1122aa33.jpg",
+    "labels": [
+      {
+        "id": "4001",
+        "category": "car",
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "box2d": {
+          "x1": 320.0,
+          "y1": 280.0,
+          "x2": 550.0,
+          "y2": 420.0
+        },
+        "poly2d": [
+          {
+            "vertices": [
+              [320.0, 280.0],
+              [550.0, 280.0],
+              [550.0, 420.0],
+              [320.0, 420.0]
+            ],
+            "types": "LLLL",
+            "closed": true
+          }
+        ]
+      },
+      {
+        "id": "4002",
+        "category": "traffic sign",
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "box2d": {
+          "x1": 700.0,
+          "y1": 150.0,
+          "x2": 740.0,
+          "y2": 190.0
+        }
+      }
+    ]
+  }
+]

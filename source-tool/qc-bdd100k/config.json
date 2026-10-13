@@ -1,0 +1,14 @@
+{
+  "image_width": 1280,
+  "image_height": 720,
+  "min_box_width": 4.0,
+  "min_box_height": 4.0,
+  "min_box_area": 16.0,
+  "duplicate_box_iou_threshold": 0.85,
+  "mandatory_attributes": [
+    "occluded",
+    "truncated"
+  ],
+  "mask_box_min_iou": 0.70,
+  "max_mask_box_drift_px": 15.0
+}
