@@ -7,4 +7,6 @@ dotnet build --configuration Release
 dotnet run --no-launch-profile --urls http://localhost:5000
 ```
 
+Terminal: dotnet build then dotnet run --urls http://localhost:5000
+
 Open <http://localhost:5000> in a browser. Press `Ctrl+C` in the terminal to stop the app.
