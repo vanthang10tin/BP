@@ -40,6 +40,12 @@ venv.bak/
 *.swo
 *~
 
+# .NET build outputs and user-specific files
+**/bin/
+**/obj/
+*.user
+*.suo
+
 # Operating System Files
 .DS_Store
 Thumbs.db

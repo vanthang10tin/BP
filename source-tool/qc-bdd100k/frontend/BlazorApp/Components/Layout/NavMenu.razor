@@ -1,0 +1,59 @@
+﻿<MudNavMenu>
+    <MudNavLink Icon="@Icons.Material.Filled.Home" Href="/" Match="NavLinkMatch.All">Home</MudNavLink>
+    <MudNavLink Icon="@Icons.Material.Filled.FiberNew" Href="/counter" Match="NavLinkMatch.Prefix">Counting</MudNavLink>
+    <MudNavGroup Icon="@Icons.Material.Filled.Settings"Title="Settings" Expanded="true">
+        <MudNavLink Icon="@Icons.Material.Filled.WbSunny" Href="/weather" Match="NavLinkMatch.Prefix">Weather</MudNavLink>
+        <MudNavLink Icon="@Icons.Material.Filled.Error" Href="/not-found" Match="NavLinkMatch.Prefix">Not Found</MudNavLink>
+    </MudNavGroup>
+    <MudNavLink Icon="@Icons.Material.Filled.Checklist" Href="/todo" Match="NavLinkMatch.Prefix">To-do list</MudNavLink>
+</MudNavMenu>
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+
+}
+
+@*
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Evertale Tool Assistant</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="counter">
+                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="weather">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="todo">
+                <MudIconButton Icon="@Icons.Custom.Brands.GitHub" Color="Color.Inherit"/> Todo
+            </NavLink>
+        </div>
+    </nav>
+</div>
+*@
