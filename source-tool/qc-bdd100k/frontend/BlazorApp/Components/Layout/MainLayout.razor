@@ -1,4 +1,4 @@
-@inherits LayoutComponentBase
+﻿@inherits LayoutComponentBase
 
 <MudThemeProvider />
 <MudPopoverProvider />
@@ -9,7 +9,7 @@
     <MudAppBar Elevation="1">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
         <MudSpacer />
-        <MudIconButton Icon="@Icons.Custom.Brands.GitHub" Target="_blank" Color="Color.Inherit" Href="your-github-url" />
+        <MudIconButton Icon="@Icons.Custom.Brands.GitHub" Target="_blank" Color="Color.Inherit" Href="your-http-link" />
     </MudAppBar>
     <MudDrawer @bind-Open="_drawerOpen" Elevation="2">
         <MudDrawerHeader>
@@ -41,7 +41,7 @@
 
     <main>
         <div class="top-row px-4">
-            <MudIconButton Icon="@Icons.Custom.Brands.GitHub" Target="_blank" Color="Color.Inherit" Href="your-github-url" />
+            <MudIconButton Icon="@Icons.Custom.Brands.GitHub" Target="_blank" Color="Color.Inherit" Href="your-http-link" />
         </div>
 
         <article class="content px-4">
