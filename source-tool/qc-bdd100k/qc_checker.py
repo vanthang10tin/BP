@@ -128,9 +128,10 @@ def main():
     parser = argparse.ArgumentParser(description="Tool kiểm tra chất lượng nhãn BDD100K 2D (N2-04A - 4 QA Layers)")
     parser.add_argument("--input", "-i", required=True, help="Đường dẫn file JSON nhãn BDD100K")
     parser.add_argument("--config", "-c", default=None, help="Đường dẫn file config JSON tùy chỉnh")
+    parser.add_argument("--output", "-o", default=None, help="Đường dẫn file xuất ra (kết quả auto-heal hoặc báo cáo)")
     parser.add_argument("--output-json", "-oj", default=None, help="Đường dẫn xuất file JSON báo cáo lỗi")
     parser.add_argument("--output-csv", "-oc", default=None, help="Đường dẫn xuất file CSV báo cáo lỗi")
-    parser.add_argument("--auto-heal", "-ah", default=None, help="Đường dẫn xuất file JSON đã được 1-Click Auto-Heal")
+    parser.add_argument("--auto-heal", "-ah", nargs="?", const="__FLAG__", default=None, help="Tự động sửa lỗi kẹp biên & box rác. Có thể kèm tên file xuất hoặc dùng chung với --output")
     parser.add_argument("--verbose", "-v", action="store_true", help="Hiển thị chi tiết từng lỗi trên console")
     args = parser.parse_args()
 
@@ -153,16 +154,36 @@ def main():
 
     print_summary(res["summary"], res["sorted_frames"], verbose=args.verbose)
 
-    if args.output_json:
-        export_json(res, args.output_json)
+    # Xuất JSON báo cáo
+    target_json = args.output_json
+    if not target_json and args.output and not args.auto_heal:
+        if args.output.lower().endswith(".json"):
+            target_json = args.output
+        elif args.output.lower().endswith(".csv") and not args.output_csv:
+            args.output_csv = args.output
+
+    if target_json:
+        export_json(res, target_json)
     if args.output_csv:
         export_csv(res["sorted_frames"], args.output_csv)
 
-    if args.auto_heal:
+    # Xử lý Auto-Heal
+    if args.auto_heal is not None:
         healed_data, stats = checker.auto_heal(data)
-        with open(args.auto_heal, "w", encoding="utf-8") as f:
+        
+        # Xác định file xuất
+        if args.auto_heal != "__FLAG__":
+            heal_out = args.auto_heal
+        elif args.output:
+            heal_out = args.output
+        else:
+            base_name = os.path.basename(args.input)
+            heal_out = os.path.join(os.path.dirname(args.input), f"cleaned_{base_name}")
+
+        with open(heal_out, "w", encoding="utf-8") as f:
             json.dump(healed_data, f, ensure_ascii=False, indent=2)
-        print(f"[OK] Đã tự động sửa lỗi và xuất file JSON sạch: {args.auto_heal} (Stats: {stats})")
+        print(f"\n[OK] ⚡ 1-Click Auto-Heal hoàn tất! Đã lưu file: {heal_out}")
+        print(f"     Thống kê đã sửa: {stats}")
 
     # Exit code: 0 nếu không có lỗi, 1 nếu có lỗi cần review
     sys.exit(0 if res["summary"]["need_review_count"] == 0 else 1)
