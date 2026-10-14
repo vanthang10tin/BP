@@ -4,12 +4,24 @@ Dự án nghiên cứu, thiết kế quy trình và phát triển công cụ ki�
 
 ---
 
+## 📚 Tài Liệu Hướng Dẫn Nhanh & Quy Trình
+
+| Tài liệu | Mô tả |
+| :--- | :--- |
+| 📖 [**`RUN_GUIDE.md`**](RUN_GUIDE.md) | **Hướng dẫn chi tiết từ A-Z để cài đặt và chạy code** (1-Click, Python CLI, Web UI, Docker, Test Suite) |
+| 🗺️ [**`PROJECT_FLOW.md`**](PROJECT_FLOW.md) | **Cấu trúc quy trình luồng làm việc (Flow)**: Những gì **Đã có**, **Đang làm**, **Kế hoạch tiếp theo** & Ánh xạ 11 ảnh trong `flow/` |
+| 🛠️ [**`source-tool/qc-bdd100k/README.md`**](source-tool/qc-bdd100k/README.md) | Tài liệu chuyên sâu kỹ thuật: Hệ thống 4 Tầng QA, Hội đồng 5 AI Model, Trích dẫn Sổ Quyết Định |
+
+---
+
 ## 📁 Cấu Trúc Repository
 
 ```text
 BP/
 ├── .gitignore                     # Cấu hình bỏ qua file rác, cache, venv
-├── README.md                      # Tài liệu tổng quan dự án và hướng dẫn sử dụng
+├── README.md                      # Tài liệu tổng quan dự án
+├── RUN_GUIDE.md                   # 🚀 Hướng dẫn chạy code từ A-Z
+├── PROJECT_FLOW.md                # 🗺️ Báo cáo cấu trúc quy trình & Flow đã và đang làm
 ├── flow/                          # Hình ảnh minh chứng quy trình thao tác và luồng nghiệp vụ
 │   ├── Screenshot 2026-10-13 204421.png
 │   └── ... (ảnh chụp màn hình quy trình gán nhãn & QC)
