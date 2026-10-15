@@ -1,19 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Models Ensemble Engine - Hội Đồng 5 Mô Hình AI & Kiểm Soát Chất Lượng 4 Tầng
-Tuân thủ toàn diện chương trình VinUniversity (Slides 19, 21, 22, 29, 30, 31, 33, 34, 37, 46):
-
-4 TẦNG KIỂM SOÁT CHẤT LƯỢNG (QA LAYERS - Slide 29):
-- Tầng 1: QC theo luật (cấu trúc, hình học, quy chuẩn BDD100K) - Chi phí ~0, chạy trên 100% nhãn
-- Tầng 2: Lỗi nghi ngờ từ Model (ObjectLab/Cleanlab 3 loại lỗi: Badly located, Swapped class, Overlooked)
-- Tầng 3: Review có ưu tiên (Hàng đợi sắp xếp theo độ nguy cơ, đo Recall@20% >= 70% so với 2 Baseline)
-- Tầng 4: Honeypot & Gold Standard (Chấm điểm Annotator qua frame chuẩn, theo dõi chất lượng qua thời gian)
-
-HỘI ĐỒNG 5 MÔ HÌNH:
-- 2 Model Bbox: YOLO26/27 (NMS-Free, STAL/ProgLoss) + RT-DETRv3/D-FINE (Vision Transformer)
-- 2 Model Seg: Meta SAM 2 (Pixel-Level Tightness & Auto-Snap) + OneFormer/YOLO26-Seg (Panoptic)
-- 1 VLM Trọng Tài: Gemini 3.8 Flash (Spatial Grounding + Đối soát Sổ Quyết Định)
+Legacy deterministic proposal placeholders for the planned multi-stage QC flow.
+These classes do not load YOLO, RT-DETR, SAM, or Gemini models. They are
+disabled by default and must not be described as model evidence or consensus.
 """
 
 import math
@@ -34,6 +24,10 @@ BDD100K_STANDARD_CLASSES = {
     "pedestrian", "rider", "car", "truck", "bus", "train",
     "motorcycle", "bicycle", "traffic light", "traffic sign"
 }
+
+# BDD100K detection JSON also stores semantic regions in the same labels array.
+# These are legitimate polygons, but are not object-detection classes.
+BDD100K_POLYGON_CLASSES = {"lane", "drivable area"}
 
 # Ánh xạ alias phổ biến về class chuẩn
 BDD100K_CLASS_ALIASES = {
@@ -236,11 +230,12 @@ class VLMGuidelineArbiter:
     VLM Trọng Tài: Gemini 3.8 Flash (Slide 21, Slide 22)
     Hỗ trợ Spatial Grounding to_xyxy (box_2d thang 0-1000) và trích dẫn Sổ Quyết Định / Guideline.
     """
-    def __init__(self):
+    def __init__(self, guideline_manager=None):
         self.model_name = "Gemini-3.8-Flash-VLM"
+        self.guideline_manager = guideline_manager or global_guideline_manager
 
     def arbitrate_dispute(self, dispute_type: str, details: Dict[str, Any]) -> Dict[str, Any]:
-        gm = global_guideline_manager
+        gm = self.guideline_manager
         cat = details.get("category", "car")
         citation = gm.format_citation(dispute_type, cat)
 
@@ -299,10 +294,12 @@ class MultiModelQCEngine:
     Tầng 3: Prioritized Review Queue (Đo lường Recall@20% >= 70%)
     Tầng 4: Honeypot & Gold Standard Quality Tracker
     """
-    def __init__(self):
+    def __init__(self, guideline_manager=None):
         self.bbox_ensemble = DualBboxEnsemble()
         self.seg_ensemble = DualSegEnsemble()
-        self.vlm_arbiter = VLMGuidelineArbiter()
+        self.guideline_manager = guideline_manager or global_guideline_manager
+        self.vlm_arbiter = VLMGuidelineArbiter(self.guideline_manager)
+        self.simulated_models_enabled = os.environ.get("QC_ENABLE_SIMULATED_MODELS", "false").strip().lower() in {"1", "true", "yes"}
 
     def evaluate_dataset_with_consensus(self, dataset: List[Dict[str, Any]], config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Đánh giá toàn diện tập dữ liệu qua 4 Tầng QA."""
@@ -355,8 +352,9 @@ class MultiModelQCEngine:
 
                 # 1.1 Kiểm tra BDD100K Ontology Class chuẩn (Slide 30)
                 canonical_cat = BDD100K_CLASS_ALIASES.get(cat, cat)
-                if canonical_cat not in BDD100K_STANDARD_CLASSES:
-                    cit = global_guideline_manager.format_citation("class", cat)
+                is_semantic_region = cat in BDD100K_POLYGON_CLASSES and not b
+                if canonical_cat not in BDD100K_STANDARD_CLASSES and not is_semantic_region:
+                    cit = self.guideline_manager.format_citation("class", cat)
                     err = {
                         "object_id": lbl_id,
                         "category": cat,
@@ -396,7 +394,7 @@ class MultiModelQCEngine:
                         "error_type": "BOX_INVERTED",
                         "qa_layer": "Tầng 1 (Luật)",
                         "component": "Bbox Geometry",
-                        "models_flagged": ["Rule-Engine", "RT-DETRv3-Transformer"],
+                        "models_flagged": ["Rule-Engine"],
                         "explanation": f"Box bị ngược tọa độ: x1={x1:.1f} >= x2={x2:.1f} hoặc y1={y1:.1f} >= y2={y2:.1f}.",
                         "action": "Tự đảo lại tọa độ",
                         "auto_healable": True
@@ -407,7 +405,7 @@ class MultiModelQCEngine:
 
                 # 1.3 Box tràn ngoài ảnh 1280x720
                 elif x1 < 0 or y1 < 0 or x2 > cfg["image_width"] or y2 > cfg["image_height"]:
-                    cit = global_guideline_manager.format_citation("out_of_image")
+                    cit = self.guideline_manager.format_citation("out_of_image")
                     err = {
                         "object_id": lbl_id,
                         "category": cat,
@@ -415,7 +413,7 @@ class MultiModelQCEngine:
                         "error_type": "BOX_OUT_OF_IMAGE",
                         "qa_layer": "Tầng 1 (Luật)",
                         "component": "Bbox Geometry",
-                        "models_flagged": ["Rule-Engine", "YOLO26-NMSFree"],
+                        "models_flagged": ["Rule-Engine"],
                         "explanation": f"Box tràn ngoài biên ảnh {cfg['image_width']}x{cfg['image_height']}: [{x1:.1f}, {y1:.1f}, {x2:.1f}, {y2:.1f}]. {cit}",
                         "action": "Tự động kẹp biên (Auto-Clamp)",
                         "auto_healable": True
@@ -426,7 +424,7 @@ class MultiModelQCEngine:
 
                 # 1.4 Box quá nhỏ / chấm rác diện tích < 16px²
                 elif w < cfg["min_box_width"] or h < cfg["min_box_height"] or area < cfg["min_box_area"]:
-                    cit = global_guideline_manager.format_citation("too_small")
+                    cit = self.guideline_manager.format_citation("too_small")
                     err = {
                         "object_id": lbl_id,
                         "category": cat,
@@ -434,7 +432,7 @@ class MultiModelQCEngine:
                         "error_type": "BOX_TOO_SMALL",
                         "qa_layer": "Tầng 1 (Luật)",
                         "component": "Bbox Geometry",
-                        "models_flagged": ["Rule-Engine", "YOLO26-NMSFree"],
+                        "models_flagged": ["Rule-Engine"],
                         "explanation": f"Box quá nhỏ/chấm rác: rộng={w:.1f}px, cao={h:.1f}px (diện tích={area:.1f}px² < {cfg['min_box_area']}px²). {cit}",
                         "action": "Xóa chấm rác (Auto-Delete)",
                         "auto_healable": True
@@ -488,7 +486,7 @@ class MultiModelQCEngine:
                 # 1.7 Thiếu thuộc tính bắt buộc (occluded, truncated)
                 for req_attr in cfg.get("mandatory_attributes", []):
                     if req_attr not in attrs or attrs[req_attr] is None or attrs[req_attr] == "":
-                        cit = global_guideline_manager.format_citation("attribute")
+                        cit = self.guideline_manager.format_citation("attribute")
                         err = {
                             "object_id": lbl_id,
                             "category": cat,
@@ -516,7 +514,7 @@ class MultiModelQCEngine:
 
                         is_bad_poly, reason = check_polygon_validity(vertices)
                         if is_bad_poly:
-                            cit = global_guideline_manager.format_citation("polygon")
+                            cit = self.guideline_manager.format_citation("polygon")
                             err = {
                                 "object_id": lbl_id,
                                 "category": cat,
@@ -524,7 +522,7 @@ class MultiModelQCEngine:
                                 "error_type": "POLYGON_SELF_INTERSECT",
                                 "qa_layer": "Tầng 1 (Luật)",
                                 "component": "Segmentation Polygon",
-                                "models_flagged": ["Rule-Engine", "Shapely-Geometry", "OneFormer-Panoptic"],
+                                "models_flagged": ["Rule-Engine", "Shapely-Geometry"],
                                 "explanation": f"Đa giác #{p_idx} lỗi hình học nghiêm trọng: {reason}. {cit}",
                                 "action": "Vẽ lại đa giác polygon không để tự cắt",
                                 "auto_healable": False
@@ -552,7 +550,7 @@ class MultiModelQCEngine:
                     )
 
                     if mask_iou < cfg["mask_box_min_iou"] or drift_dist > cfg["max_mask_box_drift_px"]:
-                        cit = global_guideline_manager.format_citation("mask")
+                        cit = self.guideline_manager.format_citation("mask")
                         err = {
                             "object_id": lbl_id,
                             "category": cat,
@@ -560,7 +558,7 @@ class MultiModelQCEngine:
                             "error_type": "MASK_BOX_MISMATCH",
                             "qa_layer": "Tầng 1 (Luật)",
                             "component": "Mask & Bbox Sync",
-                            "models_flagged": ["Rule-Engine", "Meta-SAM2-Refiner"],
+                            "models_flagged": ["Rule-Engine"],
                             "explanation": f"Mask lệch xa Bbox: IoU={mask_iou:.2f} (< {cfg['mask_box_min_iou']:.2f}), độ lệch={drift_dist:.1f}px (> {cfg['max_mask_box_drift_px']}px). {cit}",
                             "action": "Đồng bộ lại Bbox và Mask",
                             "auto_healable": False
@@ -585,7 +583,7 @@ class MultiModelQCEngine:
                                 "error_type": "BOX_DUPLICATE_SAME_CLASS",
                                 "qa_layer": "Tầng 1 (Luật)",
                                 "component": "Bbox Duplicate",
-                                "models_flagged": ["Rule-Engine", "YOLO26-NMSFree"],
+                                "models_flagged": ["Rule-Engine"],
                                 "explanation": f"Hai box cùng class '{cata}' bị vẽ đè trùng lặp (IoU={dup_iou:.2f} >= ngưỡng {cfg['duplicate_box_iou_threshold']:.2f}).",
                                 "action": "Xóa bớt 1 box trùng",
                                 "auto_healable": True
@@ -597,7 +595,9 @@ class MultiModelQCEngine:
             # -----------------------------------------------------------------
             # TẦNG 2: PHÁT HIỆN LỖI BẰNG MODEL (OBJECTLAB / CLEANLAB - Slide 31)
             # -----------------------------------------------------------------
-            ai_proposals = self.bbox_ensemble.predict_frame(frame, cfg["image_width"], cfg["image_height"])
+            # The historical ensemble is a deterministic stand-in, not real model inference.
+            # Keep it off by default so heuristic outputs cannot masquerade as detections.
+            ai_proposals = self.bbox_ensemble.predict_frame(frame, cfg["image_width"], cfg["image_height"]) if self.simulated_models_enabled else []
 
             for prop in ai_proposals:
                 # 2.1 Bỏ sót vật thể (Overlooked Object - Slide 31)
@@ -672,26 +672,26 @@ class MultiModelQCEngine:
             if has_critical:
                 priority_rank = 1
                 priority_label = "CỰC CAO"
-                recommendation = "TRẢ VỀ (REJECT)"
+                recommendation = "REVIEW REQUIRED — CRITICAL RULE FLAG"
                 badge_class = "badge-danger"
                 critical_count += 1
                 need_review_count += 1
             elif has_high:
                 priority_rank = 2
                 priority_label = "CAO"
-                recommendation = "SỬA LẺ (FIX)"
+                recommendation = "REVIEW REQUIRED — HIGH RULE FLAG"
                 badge_class = "badge-warning"
                 need_review_count += 1
             elif has_medium:
                 priority_rank = 3
                 priority_label = "VỪA"
-                recommendation = "SỬA LẺ (FIX)"
+                recommendation = "REVIEW REQUIRED — MEDIUM RULE FLAG"
                 badge_class = "badge-info"
                 need_review_count += 1
             else:
                 priority_rank = 4
-                priority_label = "PASS"
-                recommendation = "ĐẠT (PASS)"
+                priority_label = "KHÔNG CÓ CỜ RULE"
+                recommendation = "NO RULE FLAGS — NOT A VERIFIED PASS"
                 badge_class = "badge-success"
                 auto_pass_count += 1
 
@@ -713,9 +713,9 @@ class MultiModelQCEngine:
                 "badge_class": badge_class,
                 "error_count": len(frame_errors),
                 "errors": frame_errors,
-                "flagged_models": all_models if all_models else ["All-Agreed"],
+                "flagged_models": all_models,
                 "labels": labels,
-                "consensus_score": 99.0 if len(frame_errors) == 0 else max(25.0, round(100.0 - len(frame_errors) * 16.0, 1))
+                "consensus_score": None
             })
 
         # SẮP XẾP HÀNG ĐỢI REVIEW TỪ CAO XUỐNG THẤP (Rank 1 -> 2 -> 3 -> 4, sau đó theo số lỗi)
@@ -725,7 +725,7 @@ class MultiModelQCEngine:
         workload_reduction_pct = round((auto_pass_count / total_frames) * 100, 1) if total_frames > 0 else 0.0
         defect_rate_pct = round((need_review_count / total_frames) * 100, 1) if total_frames > 0 else 0.0
 
-        # Tính toán đường cong hiệu quả Review có ưu tiên so với 2 Baseline (Slide 34)
+        # No independent adjudicated gold set is provided by this analysis API.
         benchmark_metrics = self.calculate_review_prioritization_curve(evaluated_frames)
 
         summary = {
@@ -735,9 +735,11 @@ class MultiModelQCEngine:
             "auto_pass_count": auto_pass_count,
             "need_review_count": need_review_count,
             "critical_count": critical_count,
-            "workload_reduction_pct": workload_reduction_pct,
-            "defect_rate_pct": defect_rate_pct,
-            "job_verdict": "TRẢ NGUYÊN JOB" if defect_rate_pct > 10.0 else "ĐẠT CHUẨN (CHỈ CẦN SỬA LẺ)",
+            "workload_reduction_pct": None,
+            "defect_rate_pct": None,
+            "no_rule_findings_pct": workload_reduction_pct,
+            "rule_flagged_frame_pct": defect_rate_pct,
+            "job_verdict": "REVIEW_REQUIRED" if need_review_count else "NO_RULE_FINDINGS",
             "layer_stats": {
                 **layer_stats,
                 "layer_1_rules_count": layer_stats["layer_1_rules"],
@@ -752,46 +754,29 @@ class MultiModelQCEngine:
         return {
             "summary": summary,
             "sorted_frames": evaluated_frames,
-            "guideline_citation_sample": global_guideline_manager.format_citation("general")
+            "guideline_citation_sample": self.guideline_manager.format_citation("general")
         }
 
     def calculate_review_prioritization_curve(self, evaluated_frames: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Tính toán hiệu quả Review có ưu tiên so với 2 Baseline theo Slide 34:
-        Baseline 1: Chọn ngẫu nhiên (Random Selection)
-        Baseline 2: Sắp xếp theo số lượng box trong ảnh (Box-count heuristic)
-        Mục tiêu: Recall@20% >= 70%.
+        Return unavailable until the run is evaluated against independent,
+        adjudicated frame-level ground truth. Counting this engine's own flags
+        as defects makes Recall@20 tautological and invalid.
         """
         total_frames = len(evaluated_frames)
-        total_defective = sum(1 for f in evaluated_frames if f["error_count"] > 0)
-        if total_frames == 0 or total_defective == 0:
-            return {"recall_at_20_pct": 100.0, "random_recall": 20.0, "box_count_recall": 35.0}
-
-        # 20% số frame đầu tiên
-        cutoff_20 = max(1, math.ceil(total_frames * 0.20))
-
-        # 1. Hệ thống của chúng ta (Đã sắp theo priority_rank)
-        defects_in_top20 = sum(1 for f in evaluated_frames[:cutoff_20] if f["error_count"] > 0)
-        recall_at_20 = round((defects_in_top20 / total_defective) * 100, 1)
-
-        # 2. Baseline Ngẫu nhiên: 20% frame bắt được xấp xỉ 20% lỗi
-        random_recall = 20.0
-
-        # 3. Baseline Xếp theo số box
-        sorted_by_boxes = sorted(evaluated_frames, key=lambda x: len(x.get("labels", [])), reverse=True)
-        box_defects = sum(1 for f in sorted_by_boxes[:cutoff_20] if f["error_count"] > 0)
-        box_count_recall = round((box_defects / total_defective) * 100, 1)
-
         return {
-            "total_defective_frames": total_defective,
-            "review_top_20_frames": cutoff_20,
-            "recall_at_20_pct": max(recall_at_20, 75.0),  # Đảm bảo đạt target >= 70% theo Slide 34
-            "random_recall_at_20_pct": random_recall,
-            "box_count_recall_at_20_pct": max(box_count_recall, 35.0),
-            "prioritized_recall_at_20": max(recall_at_20, 75.0),
-            "random_baseline_recall_at_20": random_recall,
-            "box_count_baseline_recall_at_20": max(box_count_recall, 35.0),
-            "meets_slide34_target": True
+            "status": "unavailable_without_independent_gold",
+            "reason": "Recall@20 requires adjudicated defect labels independent of this QC run.",
+            "total_frames": total_frames,
+            "review_top_20_frames": math.ceil(total_frames * 0.20) if total_frames else 0,
+            "total_defective_frames": None,
+            "recall_at_20_pct": None,
+            "random_recall_at_20_pct": None,
+            "box_count_recall_at_20_pct": None,
+            "prioritized_recall_at_20": None,
+            "random_baseline_recall_at_20": None,
+            "box_count_baseline_recall_at_20": None,
+            "meets_slide34_target": None
         }
 
     def auto_heal_dataset(self, dataset: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -900,31 +885,30 @@ class MultiModelQCEngine:
         return healed_dataset, stats
 
     def generate_reviewer_feedback(self, evaluated_frames: List[Dict[str, Any]], annotator_name: str = "Annotator") -> str:
-        """Xuất phiếu phản hồi trả job Markdown (Slide 29 Tầng 3)."""
-        critical_and_high = [f for f in evaluated_frames if f["priority_rank"] in (1, 2, 3)]
+        """Export rule/model candidate findings for human review; never decide job acceptance."""
+        candidates = [f for f in evaluated_frames if f.get("errors")]
         total = len(evaluated_frames)
-        defect_count = len(critical_and_high)
-        rate = round((defect_count / total) * 100, 1) if total > 0 else 0.0
 
-        verdict = "❌ TRẢ NGUYÊN JOB (REJECT)" if rate > 10.0 else "⚠️ SỬA LẺ CÁC FRAME DƯỚI ĐÂY"
+        md = [
+            "# Annotation QC candidate findings",
+            f"- **Annotator:** {annotator_name}",
+            "- **Decision status:** REVIEW REQUIRED — this report is not an acceptance or rejection decision.",
+            f"- **Frames with candidate findings:** {len(candidates)}/{total}",
+            "- Confirm, correct, or dismiss each finding against the approved project guideline before requesting annotation changes.",
+            "",
+            "### Candidate findings (prioritized)",
+        ]
 
-        md = []
-        md.append(f"# [BÁO CÁO REVIEW CHẤT LƯỢNG GÁN NHÃN - ĐỘI P-037]")
-        md.append(f"- **Annotator:** {annotator_name}")
-        md.append(f"- **Kết quả nghiệm thu:** {verdict} (Tỷ lệ lỗi: {rate}% / Ngưỡng cho phép QĐ-002: 10%)")
-        md.append(f"- **Số Frame cần chỉnh sửa:** {defect_count}/{total} frames\n")
-        md.append(f"### DANH SÁCH CHI TIẾT CẦN SỬA (SẮP XẾP THEO MỨC ĐỘ NGUY CƠ TỪ CAO XUỐNG THẤP):")
-
-        for idx, f in enumerate(critical_and_high[:15], 1):
+        for idx, f in enumerate(candidates[:15], 1):
             md.append(f"\n**{idx}. Frame: `{f['frame_name']}`** [Mức độ: {f['priority_label']} - Khuyến nghị: {f['recommendation']}]")
             for err in f["errors"]:
                 models_str = ", ".join(err.get("models_flagged", []))
                 md.append(f"   • [{err['error_type']}] {err['explanation']} (Phát hiện: {models_str})")
 
-        if len(critical_and_high) > 15:
-            md.append(f"\n*(...và còn {len(critical_and_high) - 15} frame khác trong danh sách xuất chi tiết)*")
+        if len(candidates) > 15:
+            md.append(f"\n*(...and {len(candidates) - 15} more frames in the full findings export.)*")
 
-        md.append(f"\n👉 Vui lòng mở CVAT sửa lại các đối tượng trên và nộp lại theo đúng quy chuẩn.")
+        md.append("\nOnly findings confirmed by a reviewer should be sent to CVAT as annotation feedback.")
         return "\n".join(md)
 
 

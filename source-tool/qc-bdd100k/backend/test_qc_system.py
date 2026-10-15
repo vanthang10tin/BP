@@ -7,7 +7,7 @@ Kiểm thử toàn diện:
 2. Multi-Model Consensus Engine (4 Tầng QA)
 3. Cột chỉ rõ lỗi gì, lý do vi phạm, và trích dẫn điều khoản
 4. 1-Click Auto-Heal (kẹp biên, xóa rác, gỡ trùng, điền thuộc tính)
-5. Xuất phiếu phản hồi trả job Markdown (QĐ-002)
+5. Xuất danh sách finding cần reviewer xác nhận (không tự quyết định trả job)
 6. Coordinate Conventions & Transformations (Slide 37, Slide 22)
 7. Honeypot & Gold Standard Quality Tracker (Slide 33)
 8. Prioritized Review Benchmark vs Baselines (Slide 34)
@@ -16,6 +16,7 @@ Kiểm thử toàn diện:
 import sys
 import os
 import json
+import math
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if CURRENT_DIR not in sys.path:
@@ -60,9 +61,9 @@ def run_tests():
     sorted_frames = res["sorted_frames"]
 
     print(f"  ✓ Tổng số frames: {summary['total_frames']}")
-    print(f"  ✓ Tỷ lệ Auto-Pass: {summary['workload_reduction_pct']}% ({summary['auto_pass_count']} frames)")
+    print(f"  ✓ Frames without active rule flags: {summary['auto_pass_count']} ({summary['no_rule_findings_pct']}%)")
     print(f"  ✓ Số frames cần Review: {summary['need_review_count']}")
-    print(f"  ✓ Quyết định Job: {summary['job_verdict']}")
+    print(f"  ✓ Trạng thái rule review: {summary['job_verdict']}")
 
     # Kiểm tra tính sắp xếp từ Cao xuống Thấp
     ranks = [f["priority_rank"] for f in sorted_frames]
@@ -88,11 +89,12 @@ def run_tests():
     assert heal_stats.get("attributes_healed", 0) > 0, "Chưa điền được thuộc tính thiếu"
     print("  ✓ ĐÃ XÁC NHẬN: Auto-Heal tự động kẹp biên, xóa box rác, gỡ trùng và điền thuộc tính thành công!")
 
-    # 5. Test Xuất Phiếu Trả Job
-    print("\n[TEST 5] Kiểm tra tính năng Xuất Phiếu Trả Job Markdown...")
+    # 5. Test candidate feedback export
+    print("\n[TEST 5] Kiểm tra xuất danh sách finding cần reviewer xác nhận...")
     feedback_md = checker.generate_feedback_report(sorted_frames, "Đoàn Văn Thắng")
-    assert "BÁO CÁO REVIEW" in feedback_md, "Sai định dạng feedback"
-    print("  ✓ ĐÃ XÁC NHẬN: Tạo phiếu trả job markdown thành công (10 dòng đầu):")
+    assert "not an acceptance or rejection decision" in feedback_md, "Report must not make a job acceptance decision"
+    assert "TRẢ NGUYÊN JOB" not in feedback_md and "P-037" not in feedback_md, "Report contains unapproved policy"
+    print("  ✓ ĐÃ XÁC NHẬN: Export labels findings as reviewer candidates (10 dòng đầu):")
     for line in feedback_md.splitlines()[:10]:
         print(f"    {line}")
 
@@ -141,18 +143,17 @@ def run_tests():
     print(f"  ✓ Status: {honeypot_res['gold_standard_status']}")
     assert honeypot_res['precision'] >= 90.0, "Độ chính xác Honeypot không đạt chuẩn"
 
-    # 8. Test Review Prioritization Benchmark (Slide 34)
-    print("\n[TEST 8] Kiểm tra Tầng 3: Review Prioritization Benchmark Recall@20% (Slide 34)...")
+    # 8. Benchmark must remain unavailable without independent adjudicated gold.
+    print("\n[TEST 8] Xác nhận không tự chấm Recall@20 bằng rule flag của chính hệ thống...")
     bench = summary.get("benchmark", {})
-    recall_20 = bench.get("recall_at_20_pct", 0)
-    random_20 = bench.get("random_recall_at_20_pct", 20)
-    print(f"  ✓ Recall@20% của Hệ Thống: {recall_20}%")
-    print(f"  ✓ Recall@20% của Baseline Ngẫu Nhiên: {random_20}%")
-    assert recall_20 >= 70.0, f"Recall@20% ({recall_20}%) chưa đạt mục tiêu >= 70% của Slide 34"
-    print("  ✓ ĐÃ XÁC NHẬN: Hệ thống đạt Recall@20% >= 70%, vượt trội gấp 3.5 lần so với chọn ngẫu nhiên!")
+    assert bench.get("status") == "unavailable_without_independent_gold"
+    assert bench.get("prioritized_recall_at_20") is None
+    assert bench.get("random_baseline_recall_at_20") is None
+    assert bench.get("meets_slide34_target") is None
+    print("  ✓ Recall, baselines và target chưa được báo cáo nếu thiếu gold độc lập.")
 
     print("\n" + "=" * 65)
-    print("🎉 TẤT CẢ 8/8 BÀI KIỂM THỬ CHUẨN VINUNIVERSITY ĐÃ VƯỢT QUA 100%!")
+    print("🎉 TẤT CẢ 8/8 KIỂM TRA LOGIC ĐÃ QUA; benchmark không bị tính từ chính các rule flag.")
     print("=" * 65)
 
 

@@ -34,7 +34,7 @@ try:
     print(f"[3] GET /api/qc/sample : {req.status}")
     print(f"    - Total frames: {summary.get('total_frames')}")
     print(f"    - Auto pass count: {summary.get('auto_pass_count')}")
-    print(f"    - Workload reduction: {summary.get('workload_reduction_pct')}%")
+    print(f"    - Frames without rule flags: {summary.get('auto_pass_count')} ({summary.get('no_rule_findings_pct')}%)")
     print(f"    - Critical count: {summary.get('critical_count')}")
     print(f"    - Sorted frames count: {len(sorted_frames)}")
 

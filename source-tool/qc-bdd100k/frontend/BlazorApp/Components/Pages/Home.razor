@@ -1,9 +1,1162 @@
-﻿@page "/"
+@page "/"
+@using System.Text.Json
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@inject IHttpClientFactory HttpFactory
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
 
-<PageTitle>Home</PageTitle>
+<PageTitle>QC Studio · Local Dataset QA</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="studio-shell">
+    <header class="topbar">
+        <a class="brand" href="/" aria-label="QC Studio home"><span class="brand-mark">Q</span><span>QC<span class="brand-light"> STUDIO</span><small>LOCAL DATASET QUALITY WORKSPACE</small></span></a>
+        <div class="topbar-center"><span class="live-dot"></span><span>@(ApiOnline ? "Local QC engine connected" : "Waiting for QC engine")</span><span class="privacy-chip"><i class="bi bi-shield-lock"></i> LOCAL WORKSPACE</span></div>
+        <div class="topbar-right"><span class="avatar">VT</span><span class="user-label">Reviewer workspace</span></div>
+    </header>
 
-Welcome to your new app.
+    <div class="app-frame">
+        <aside class="right-rail" aria-label="Workspace navigation">
+            <div class="rail-label">LABEL TYPE</div>
+            <button class="rail-choice @(Mode == "bbox" ? "selected" : "")" @onclick='() => SetMode("bbox")'><i class="bi bi-bounding-box"></i><span>BBox</span></button>
+            <button class="rail-choice @(Mode == "segmentation" ? "selected" : "")" @onclick='() => SetMode("segmentation")'><i class="bi bi-mask"></i><span>Segmentation</span></button>
+            <div class="rail-divider"></div>
+            <div class="rail-label">WORKSPACE</div>
+            <button class="rail-step @(Step == 0 ? "active" : "")" @onclick="() => Step = 0"><b>01</b><span>Prepare</span></button>
+            <button class="rail-step @(Step == 1 ? "active" : "")" @onclick="() => Step = 1"><b>02</b><span>Review</span>@if (Frames.Count > 0) { <em>@Frames.Count</em> }</button>
+            <button class="rail-step @(Step == 2 ? "active" : "")" @onclick="() => Step = 2"><b>03</b><span>Export</span></button>
+            <div class="rail-spacer"></div>
+            <div class="engine-state"><span class="engine-icon"><i class="bi bi-cpu"></i></span><span>QC engine<small>@ModelStatusText</small></span><span class="engine-dot"></span></div>
+        </aside>
 
-<Counter IncrementAmount="5" />
+        <main class="workspace">
+            @if (Step == 0)
+            {
+                <section class="welcome-row"><div><div class="eyebrow">QUALITY CONTROL / @Mode.ToUpperInvariant()</div><h1>Prepare a review run</h1><p>Load annotations, a team guideline and paired images/masks. Local models compare predictions with labels and create review candidates.</p></div><span class="step-counter">01 <i>/ 03</i></span></section>
+                <div class="demo-quick-banner" style="background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(16,185,129,0.1)); border: 1px solid #6366f1; border-radius: 9px; padding: 13px 18px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap;">
+                    <div>
+                        <b style="color: #c7d2fe; font-size: 13px; display: flex; align-items: center; gap: 7px;">
+                            <i class="bi bi-lightning-charge-fill" style="color: #fbbf24;"></i> Thử nhanh với lát cắt BDD100K thật
+                        </b>
+                        <p style="margin: 4px 0 0; color: #94a3b8; font-size: 11px;">Nạp 50 frame/ảnh thật từ bộ test cục bộ để thử giao diện. Guideline đi kèm chỉ là mẫu tham khảo, chưa được dự án phê duyệt.</p>
+                    </div>
+                    <button class="primary-button" style="white-space: nowrap; padding: 10px 18px; font-weight: 600;" disabled="@IsBusy" @onclick="LoadQuickDemoPack">
+                        <i class="bi bi-box-arrow-in-down"></i> Nạp bộ test 50 ảnh
+                    </button>
+                </div>
+                <div class="setup-grid">
+                    <article class="setup-card"><div class="card-head"><span class="card-icon violet"><i class="bi bi-box-arrow-in-down"></i></span><span class="card-kicker">INPUT 01</span><span class="required">REQUIRED</span></div><h2>@(Mode == "segmentation" ? "Segmentation manifest" : "Dataset & labels")</h2><p>@(Mode == "segmentation" ? "Upload an image manifest with paired train-ID masks and images. Color masks are used for a visual overlay." : "Upload BDD100K, COCO, YOLO-JSON, or normalized frame annotations. Attach source images for local model inference.")</p>
+                        <label class="dropzone" for="labels-file"><InputFile id="labels-file" OnChange="OnLabelsSelected" accept=".json,application/json" /><span class="upload-symbol"><i class="bi bi-file-earmark-arrow-up"></i></span><strong>@(LabelFileName ?? "Choose annotation JSON")</strong><small>@(LabelFileName is null ? "BDD100K labels · JSON" : $"{FrameCount} frames parsed · ready to analyze")</small><span class="browse-button">Browse files</span></label>
+                        <div class="file-meta"><span><i class="bi bi-braces"></i> @(ProfileJson is null ? "BDD100K default · profile selects other formats" : GetString(ProfileJson.Value, "annotation_format", "custom profile"))</span><span><i class="bi bi-lock"></i> Stays in this workspace</span></div>
+                    </article>
+                    <article class="setup-card profile-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-diagram-3"></i></span><span class="card-kicker">WORKSPACE SCHEMA</span><span class="optional">OPTIONAL</span></div><h2>Dataset profile & ontology</h2><p>For other datasets, set task, annotation format, class names/aliases, dimensions, mask IDs, and model label mapping in this JSON profile.</p><label>Workspace name<input class="profile-name" @bind="WorkspaceName" placeholder="e.g. Road inspection batch A" /></label><label class="compact-upload" for="profile-file"><InputFile id="profile-file" OnChange="OnProfileSelected" accept=".json,application/json" /><i class="bi bi-braces"></i><span>@(ProfileFileName ?? "Add profile JSON")</span><small>taxonomy · formats · thresholds</small></label></article>
+                    <article class="setup-card"><div class="card-head"><span class="card-icon mint"><i class="bi bi-journal-check"></i></span><span class="card-kicker">INPUT 02</span><span class="required">REQUIRED</span></div><h2>Team guideline</h2><p>Provide a Markdown or text guideline. The built-in BDD100K text is an unapproved template; upload the project's approved policy before relying on policy-specific findings.</p>
+                        <label class="dropzone guideline-drop" for="guideline-file"><InputFile id="guideline-file" OnChange="OnGuidelineSelected" accept=".md,.txt,text/plain,text/markdown" /><span class="upload-symbol"><i class="bi bi-journal-arrow-up"></i></span><strong>@(GuidelineFileName ?? "Choose guideline file")</strong><small>@(GuidelineFileName is null ? "Markdown or plain text" : $"{GuidelineFileName} · loaded")</small><span class="browse-button secondary">Browse files</span></label>
+                        <div class="file-meta"><span><i class="bi bi-bookmark-check"></i> Clauses cited in issues</span><button class="text-button" @onclick="OpenGuideline">Edit current guideline <i class="bi bi-arrow-up-right"></i></button></div>
+                    </article>
+                    <article class="setup-card image-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-images"></i></span><span class="card-kicker">@(Mode == "segmentation" ? "REQUIRED IMAGE + MASK PAIR" : "IMAGE INPUT")</span></div><h2>Frame images & masks</h2><p>@(Mode == "segmentation" ? "Attach JPGs, train-ID masks for metric comparison, and color masks for display." : "Attach matching images for local model inference. BDD100K archive lookup is a fallback.")</p><label class="compact-upload" for="images-file"><InputFile id="images-file" OnChange="OnImagesSelected" accept="image/*" multiple /><i class="bi bi-plus-lg"></i><span>@(ImageFiles.Count == 0 ? "Add images" : $"{ImageFiles.Count} images attached")</span><small>match by filename</small></label>@if (Mode == "segmentation") { <label class="compact-upload mask-upload" for="index-masks-file"><InputFile id="index-masks-file" OnChange="OnIndexMasksSelected" accept="image/png" multiple /><i class="bi bi-grid-3x3"></i><span>@(IndexMaskFiles.Count == 0 ? "Add train-ID masks" : $"{IndexMaskFiles.Count} index masks attached")</span><small>PNG · masks/index/</small></label><label class="compact-upload mask-upload" for="masks-file"><InputFile id="masks-file" OnChange="OnMasksSelected" accept="image/png" multiple /><i class="bi bi-layers"></i><span>@(MaskFiles.Count == 0 ? "Add color masks" : $"{MaskFiles.Count} color masks attached")</span><small>PNG · masks/color/</small></label> }</article>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="status-message @(HasError ? "error" : "")"><i class="bi @(HasError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @StatusMessage</div> }
+                <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "Local + Gemini review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.")</small></span></div><button class="primary-button" disabled="@(LabelsJson is null || string.IsNullOrWhiteSpace(GuidelineText) || IsBusy)" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
+                <div class="setup-card" style="margin-top:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+                    <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@(!GeminiConfigured || IsBusy)" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">@(GeminiConfigured ? "Đã có key: Gemini được chọn sẵn cho lần chạy; bỏ chọn nếu muốn local-only." : "Chưa có API key nên pipeline chỉ chạy local.") Model: @GeminiModel · Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
+                    <label style="margin:0;max-width:180px">Số frame tối đa<input type="number" min="1" max="50" @bind="GeminiFrameLimit" disabled="@(!UseGemini || IsBusy)" /></label>
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="text-button">Lấy Gemini API key <i class="bi bi-box-arrow-up-right"></i></a>
+                </div>
+            }
+            else if (Step == 1)
+            {
+                <section class="welcome-row compact-welcome"><div><div class="eyebrow">REVIEW QUEUE / @Mode.ToUpperInvariant()</div><h1>Prioritized review</h1><p>Highest-risk frames first · Select an issue to inspect its evidence.</p></div><div class="review-heading-actions"><span>@($"{GetString(ResultRoot, "guideline_status", "no guideline")} · v{GetInt(ResultRoot, "guideline_version", 0)}")</span><button class="outline-button" @onclick="OpenGuideline"><i class="bi bi-journal-text"></i> Search / edit guideline</button><button class="primary-button" style="background:#ef4444;border-color:#dc2626;font-size:9px" @onclick="() => Step = 2"><i class="bi bi-arrow-right"></i> Reports (@IssueCount)</button></div></section>
+                @if (Frames.Count == 0)
+                { <div class="empty-state"><span class="empty-icon"><i class="bi bi-inboxes"></i></span><h2>No review run yet</h2><p>Upload labels in Prepare, then start an analysis run.</p><button class="primary-button" @onclick="() => Step = 0">Go to Prepare <i class="bi bi-arrow-right"></i></button></div> }
+                else
+                {
+                    <div class="metrics-row"><div class="metric"><small>FRAMES IN RUN</small><b>@Frames.Count</b></div><div class="metric"><small>@(Mode == "segmentation" ? "MACRO IoU" : "FRAMES WITH CANDIDATES")</small><b>@(Mode == "segmentation" ? GetMetric(ResultRoot, "summary", "macro_iou") : ReviewCount.ToString())</b></div><div class="metric"><small>MODEL CANDIDATES</small><b>@GetInt(ResultRoot, "model_issues", 0)</b></div><div class="metric metric-pass"><small>REVIEW DECISIONS</small><b>@TotalDecidedCount / @IssueCount</b><span style="display:block;font-size:9px;color:#94a3b8;margin-top:2px;font-family:'DM Mono',monospace">(@ConfirmedIssueCount đã giữ · @RejectedIssueCount đã xóa)</span></div><div class="metric-source"><i class="bi bi-info-circle"></i>@ModelStatusText · @(GetBool(GetObject(ResultRoot, "gemini"), "used") ? "Gemini + local candidates" : "local-only candidates") · human review required · IoU is not a benchmark</div></div>
+                    <div class="review-layout">
+                        <section class="queue-panel"><div class="panel-title"><div><span class="eyebrow">FRAME QUEUE</span><h2>@(Mode == "segmentation" ? "Mask review" : "Review priority")</h2></div><span class="sort-label"><i class="bi @(Mode == "segmentation" ? "bi-images" : "bi-sort-down")"></i> @(Mode == "segmentation" ? "Pack order" : "Rule flags first")</span></div>@if (Mode == "segmentation") { <div class="queue-filters"><span class="filter-pill on">All mask pairs <span>@Frames.Count</span></span></div> } else { <div class="queue-filters"><button class="filter-pill @(QueueFilter == "all" ? "on" : "")" @onclick='() => QueueFilter = "all"'>All <span>@Frames.Count</span></button><button class="filter-pill @(QueueFilter == "review" ? "on" : "")" @onclick='() => QueueFilter = "review"'>Flagged <span>@ReviewCount</span></button><button class="filter-pill @(QueueFilter == "pass" ? "on" : "")" @onclick='() => QueueFilter = "pass"'>No rule flags <span>@PassCount</span></button></div>}
+                        <div class="frame-list">@foreach (var frame in VisibleFrames)
+                            { var name = GetString(frame, "frame_name", "frame"); var rank = GetInt(frame, "priority_rank", 4); var issues = GetArray(frame, "errors"); <button class="frame-row @(SelectedFrameName == name ? "chosen" : "")" @onclick="() => SelectFrame(name)"><span class="rank-mark rank-@rank">@(Mode == "segmentation" ? "M" : rank)</span><span class="frame-copy"><b>@name</b><small>@(Mode == "segmentation" ? $"Macro IoU {GetMetric(frame, "model_segmentation_metrics", "macro_iou")} · {issues.Count} candidate(s)" : $"{GetString(frame, "priority_label", "NO RULE FLAGS")} · {issues.Count} candidate(s)")</small></span><span class="queue-severity"><i class="bi bi-exclamation-circle"></i> @issues.Count</span></button> }</div>
+                        </section>
+                        <section class="canvas-panel @(IsFullscreen ? "is-fullscreen" : "")">
+                            <div class="panel-title image-panel-title">
+                                <div>
+                                    <span class="eyebrow">ANNOTATION CANVAS · @Mode.ToUpperInvariant()</span>
+                                    <h2>@SelectedFrameName</h2>
+                                </div>
+                                <div class="zoom-controls">
+                                    <button class="zoom-btn" title="Thu nhỏ (Zoom out)" @onclick="ZoomOut"><i class="bi bi-dash-lg"></i></button>
+                                    <button class="zoom-btn" title="Đặt lại 100%" @onclick="FitView" style="width:auto;padding:0 6px;font-size:10px">@($"{Math.Round(ZoomLevel * 100)}%")</button>
+                                    <button class="zoom-btn" title="Phóng to (Zoom in)" @onclick="ZoomIn"><i class="bi bi-plus-lg"></i></button>
+                                    <button class="zoom-btn @(IsFullscreen ? "active" : "")" title="@(IsFullscreen ? "Thoát toàn màn hình (ESC)" : "Xem toàn màn hình (Fullscreen)")" @onclick="ToggleFullscreen">
+                                        <i class="bi @(IsFullscreen ? "bi-fullscreen-exit" : "bi-arrows-fullscreen")"></i>
+                                    </button>
+                                    @if (IsFullscreen)
+                                    {
+                                        <button class="layer-btn focus-mode" style="padding:2px 8px;font-weight:700" @onclick="ToggleFullscreen">
+                                            <i class="bi bi-fullscreen-exit"></i> THOÁT TOÀN MÀN HÌNH
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Thanh công cụ hiển thị Layer & Nhãn -->
+                            <div class="canvas-controls-bar">
+                                <div class="layer-toggles">
+                                    <button class="layer-btn focus-mode @(OnlyShowIssues ? "active" : "")" @onclick="() => OnlyShowIssues = !OnlyShowIssues" title="Bật/Tắt chế độ chỉ hiển thị các box có lỗi hoặc nghi vấn (Ẩn box đúng)">
+                                        <i class="bi @(OnlyShowIssues ? "bi-funnel-fill" : "bi-funnel")"></i> @(OnlyShowIssues ? "🎯 Chỉ hiện box có lỗi: BẬT" : "👁️ Hiện tất cả (kể cả box đúng)")
+                                    </button>
+                                    <button class="layer-btn human @(ShowHumanBoxes ? "active" : "")" @onclick="() => ShowHumanBoxes = !ShowHumanBoxes" title="Ẩn/Hiện nhãn người đánh (Màu xanh)">
+                                        <span class="dot-human"></span> Nhãn người (@HumanBoxCount)
+                                    </button>
+                                    <button class="layer-btn model @(ShowModelBoxes ? "active" : "")" @onclick="() => ShowModelBoxes = !ShowModelBoxes" title="Ẩn/Hiện AI Model YOLO26x (Màu tím)">
+                                        <span class="dot-model"></span> Model AI (@ModelBoxCount)
+                                    </button>
+                                    <button class="layer-btn issues @(ShowIssueBoxes ? "active" : "")" @onclick="() => ShowIssueBoxes = !ShowIssueBoxes" title="Ẩn/Hiện cảnh báo lỗi QC (Màu đỏ)">
+                                        <span class="dot-issue"></span> Cảnh báo QC (@IssueBoxCount)
+                                    </button>
+                                    <button class="layer-btn labels @(ShowTextLabels ? "active" : "")" @onclick="() => ShowTextLabels = !ShowTextLabels" title="Ẩn/Hiện chữ tên nhãn để không bị che khuất ảnh">
+                                        <i class="bi @(ShowTextLabels ? "bi-eye" : "bi-eye-slash")"></i> @(ShowTextLabels ? "Tên nhãn: BẬT" : "Tên nhãn: TẮT")
+                                    </button>
+                                </div>
+                                @if (Mode == "segmentation") {
+                                    <div>
+                                        <button class="layer-btn @(ShowModelMask ? "" : "active")" @onclick="() => ShowModelMask = false">Uploaded</button>
+                                        <button class="layer-btn @(ShowModelMask ? "active" : "")" disabled="@(SelectedFrame is null || !HasModelMask(SelectedFrame.Value))" @onclick="() => ShowModelMask = true">Local model</button>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="canvas-stage-wrapper">
+                                <div class="canvas-stage-inner" style="transform: scale(@ZoomLevel);">
+                                    @if (SelectedFrame is not null)
+                                    {
+                                        var src = GetImageUrl(SelectedFrameName ?? "");
+                                        if (src is not null)
+                                        {
+                                            <img src="@src" alt="Frame @SelectedFrameName" />
+                                        }
+                                        else
+                                        {
+                                            <div class="image-placeholder"><i class="bi bi-image"></i><b>Frame preview unavailable</b><small>Add the image in Prepare or put it in the configured local image archive.</small></div>
+                                        }
+
+                                        @if (Mode == "segmentation")
+                                        {
+                                            var mask = GetMaskUrl(SelectedFrame.Value);
+                                            if (mask is not null)
+                                            {
+                                                <img class="segmentation-overlay" src="@mask" alt="@(ShowModelMask ? "Local model prediction overlay" : "Uploaded semantic mask overlay")" />
+                                            }
+                                            var frameW = GetInt(SelectedFrame.Value, "width", 1280);
+                                            var frameH = GetInt(SelectedFrame.Value, "height", 720);
+                                            <svg class="annotation-overlay" viewBox="0 0 @frameW @frameH" preserveAspectRatio="xMidYMid meet">
+                                                @if (ShowModelBoxes)
+                                                {
+                                                    @foreach (var prediction in GetArray(SelectedFrame.Value, "model_predictions"))
+                                                    {
+                                                        var predBox = GetPredictionBox(prediction);
+                                                        if (predBox is not null)
+                                                        {
+                                                            <rect x="@predBox.Value.X" y="@predBox.Value.Y" width="@predBox.Value.W" height="@predBox.Value.H" class="model-box" />
+                                                        }
+                                                    }
+                                                }
+                                                @if (ShowIssueBoxes)
+                                                {
+                                                    @foreach (var issue in SelectedIssues)
+                                                    {
+                                                        if (IsIssueRejected(issue)) continue;
+                                                        var issueBox = GetIssueBox(issue);
+                                                        if (issueBox is not null)
+                                                        {
+                                                            <rect x="@issueBox.Value.X" y="@issueBox.Value.Y" width="@issueBox.Value.W" height="@issueBox.Value.H" class="issue-box" @onclick="() => SelectIssue(issue)" />
+                                                        }
+                                                    }
+                                                }
+                                            </svg>
+                                        }
+                                        else
+                                        {
+                                            var frameW = GetInt(SelectedFrame.Value, "width", 1280);
+                                            var frameH = GetInt(SelectedFrame.Value, "height", 720);
+                                            <svg class="annotation-overlay" viewBox="0 0 @frameW @frameH" preserveAspectRatio="xMidYMid meet">
+                                                @if (ShowHumanBoxes)
+                                                {
+                                                    var humanList = GetHumanLabelsList();
+                                                    @for (var idx = 0; idx < humanList.Count; idx++)
+                                                    {
+                                                        var item = humanList[idx];
+                                                        var objId = GetString(item, "id", $"h_{idx}");
+                                                        if (IsObjectRejected(objId)) continue; // REJECT THÌ MẤT BOX LUÔN!
+                                                        var isAccepted = IsObjectAccepted(objId);
+                                                        var hasIssue = HasLabelIssue(objId, idx);
+                                                        if (OnlyShowIssues && !hasIssue && !isAccepted) continue; // CHỈ HIỆN CÁC BOX CÓ LỖI/NGHI VẤN!
+
+                                                        var isSelected = ActiveObjectId == objId;
+                                                        var box = GetAnyBox(item);
+                                                        if (box is not null)
+                                                        {
+                                                            <rect x="@box.Value.X" y="@box.Value.Y" width="@box.Value.W" height="@box.Value.H"
+                                                                  class="label-box @(isAccepted ? "accepted" : "") @(isSelected ? "box-highlighted" : "")"
+                                                                  @onclick="() => OnBoxClicked(objId)" />
+                                                            @if (ShowTextLabels || isSelected)
+                                                            {
+                                                                <foreignObject x="@box.Value.X" y="@(Math.Max(0, box.Value.Y - 20))" width="160" height="22">
+                                                                    <div class="label-text">
+                                                                        @(isAccepted ? "✓ " : "")@GetString(item, "category", "object")
+                                                                    </div>
+                                                                </foreignObject>
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                @if (ShowModelBoxes)
+                                                {
+                                                    var modelList = GetModelPredictionsList();
+                                                    @for (var idx = 0; idx < modelList.Count; idx++)
+                                                    {
+                                                        var item = modelList[idx];
+                                                        var modelId = $"MODEL_{idx}";
+                                                        var objId = GetString(item, "id", modelId);
+                                                        if (IsPredictionRejected(idx) || IsObjectRejected(objId)) continue; // REJECT THÌ MẤT BOX LUÔN!
+                                                        var isAccepted = IsPredictionAccepted(idx) || IsObjectAccepted(objId);
+                                                        var hasPredIssue = HasPredictionIssue(idx) || HasLabelIssue(objId, idx);
+                                                        if (OnlyShowIssues && !hasPredIssue && !isAccepted) continue; // CHỈ HIỆN MODEL BOX CÓ LỖI/MISSING/CONFLICT!
+
+                                                        var predBox = GetAnyBox(item);
+                                                        var isSelected = ActiveObjectId == modelId || ActiveObjectId == objId;
+                                                        if (predBox is not null)
+                                                        {
+                                                            <rect x="@predBox.Value.X" y="@predBox.Value.Y" width="@predBox.Value.W" height="@predBox.Value.H"
+                                                                  class="@(isAccepted ? "label-box accepted" : "model-box") @(isSelected ? "box-highlighted" : "")"
+                                                                  @onclick='() => OnBoxClicked(modelId)' />
+                                                            @if (ShowTextLabels || isSelected)
+                                                            {
+                                                                <foreignObject x="@predBox.Value.X" y="@predBox.Value.Y" width="190" height="22">
+                                                                    <div class="@(isAccepted ? "label-text" : "model-label")">
+                                                                        @(isAccepted ? "✓ accepted · " : "YOLO26x · ")@GetString(item, "category", "object")
+                                                                    </div>
+                                                                </foreignObject>
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                @if (ShowIssueBoxes)
+                                                {
+                                                    @foreach (var issue in SelectedIssues)
+                                                    {
+                                                        if (IsIssueRejected(issue)) continue; // REJECT THÌ MẤT BOX LUÔN!
+                                                        var issueId = GetString(issue, "issue_id", "");
+                                                        var isSelected = ActiveIssueId == issueId;
+                                                        var issueBox = GetIssueBox(issue);
+                                                        if (issueBox is not null)
+                                                        {
+                                                            <rect x="@issueBox.Value.X" y="@issueBox.Value.Y" width="@issueBox.Value.W" height="@issueBox.Value.H"
+                                                                  class="issue-box @(isSelected ? "box-highlighted" : "")"
+                                                                  @onclick="() => SelectIssue(issue)" />
+                                                        }
+                                                    }
+                                                }
+                                            </svg>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="image-placeholder"><i class="bi bi-image"></i><b>Select a frame</b></div>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="legend">
+                                <span><i class="dot-human"></i> Nhãn người đánh (Màu xanh)</span>
+                                <span><i class="dot-model"></i> YOLO26x đề xuất (Màu tím)</span>
+                                <span><i class="dot-issue"></i> Lỗi QC (Viền đỏ nét đứt)</span>
+                                <span class="image-hint">@GetString(SelectedFrame ?? default, "frame_name", "")</span>
+                            </div>
+                        </section>
+
+                        <section class="issue-panel">
+                            <div class="panel-title">
+                                <div>
+                                    <span class="eyebrow">FINDINGS</span>
+                                    <h2>Frame issues <span class="issue-count">@SelectedIssues.Count</span></h2>
+                                </div>
+                                <button class="icon-button" title="Export frame issues" @onclick="() => Step = 2">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </button>
+                            </div>
+
+                            @if (SelectedIssues.Count == 0)
+                            {
+                                <div class="no-issues">
+                                    <i class="bi bi-check2-circle"></i>
+                                    <b>Không phát hiện lỗi trên frame này</b>
+                                    <small>YOLO26x và rule engine không ghi nhận sai lệch vượt ngưỡng.</small>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="issues-list">
+                                    @foreach (var issue in SelectedIssues)
+                                    {
+                                        var issueId = GetString(issue, "issue_id", "");
+                                        var severity = GetString(issue, "severity", "MEDIUM");
+                                        var decision = GetIssueDecision(issue);
+                                        var isSelected = ActiveIssueId == issueId;
+                                        <article class="issue-card @(isSelected ? "active-card" : "")" @onclick="() => SelectIssue(issue)">
+                                            <div class="issue-top">
+                                                <span class="severity-tag sev-@severity.ToLowerInvariant()">@severity</span>
+                                                <span class="issue-layer">@GetString(issue, "qa_layer", "QC")</span>
+                                            </div>
+                                            <h3>@Humanize(GetString(issue, "error_type", "Issue"))</h3>
+                                            <p>@GetString(issue, "explanation", "No explanation provided.")</p>
+                                            <div class="issue-object">
+                                                <i class="bi bi-bounding-box"></i> @GetString(issue, "category", "Object") <span>·</span> ID: @GetString(issue, "object_id", "—")
+                                            </div>
+                                            @if (GetString(issue, "iou", "") is var iou && iou.Length > 0)
+                                            {
+                                                <div class="issue-rule"><small>MASK IoU / THRESHOLD</small><span>@iou / @GetString(issue, "review_threshold", "workspace setting")</span></div>
+                                            }
+                                            <div class="issue-rule">
+                                                <small>GUIDELINE REFERENCE</small>
+                                                <span>@GetString(issue, "guideline_rule", "Review against team guideline")</span>
+                                            </div>
+                                            <div class="issue-footer">
+                                                <span><i class="bi bi-cpu"></i> @GetString(issue, "model_name", "YOLO26x")</span>
+                                                <button class="text-button" @onclick="() => CopyIssue(issue)" @onclick:stopPropagation="true">Copy note</button>
+                                            </div>
+
+                                            <!-- Nút bấm Acp / Reject thực thi trực tiếp gắn với box -->
+                                            <div class="decision-card-actions" @onclick:stopPropagation="true">
+                                                @if (decision == "confirmed")
+                                                {
+                                                    <span class="decision-badge-acp"><i class="bi bi-check-circle-fill"></i> ĐÃ GIỮ LẠI (ACP)</span>
+                                                    <button class="btn-undo" @onclick="() => UndoIssueDecision(issue)">Khôi phục</button>
+                                                }
+                                                else if (decision == "rejected")
+                                                {
+                                                    <span class="decision-badge-rej"><i class="bi bi-x-circle-fill"></i> ĐÃ XÓA BOX (REJECT)</span>
+                                                    <button class="btn-undo" @onclick="() => UndoIssueDecision(issue)">Khôi phục</button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn-acp" title="Đồng ý - Giữ nguyên box trên ảnh" @onclick="() => AcceptIssue(issue)">
+                                                        <i class="bi bi-check-lg"></i> Giữ lại (Acp)
+                                                    </button>
+                                                    <button class="btn-rej" title="Từ chối - Xóa lập tức box khỏi ảnh" @onclick="() => RejectIssue(issue)">
+                                                        <i class="bi bi-trash"></i> Xóa box (Reject)
+                                                    </button>
+                                                }
+                                            </div>
+                                        </article>
+                                    }
+                                </div>
+                            }
+                        </section>
+                    </div>
+                <div class="cvat-connect">
+    <div class="cvat-heading">
+        <span class="cvat-icon"><i class="bi bi-link-45deg"></i></span>
+        <span>
+            <b>GỬI ISSUE ĐÃ CHỌN LÊN CVAT</b>
+            <small>Tạo CVAT issues có frame và vị trí bằng frame map. Có thể tùy chọn gửi candidate chưa Confirm và đổi Stage/State của Job; hãy kiểm tra Job, mapping và tuỳ chọn trước khi gửi. Không sửa annotation.</small>
+        </span>
+        <span class="coming-soon" style="background:#1e1b4b;color:#a5b4fc;border:1px solid #4338ca">@CvatStateLabel</span>
+    </div>
+
+    <div style="margin-top: 14px;">
+        <label style="color:#94a3b8;font-size:10px;margin-bottom:4px;display:block">
+            <i class="bi bi-list-task"></i> Chọn nhanh Job từ CVAT:
+        </label>
+        <select class="cvat-job-select" @onchange="OnJobSelected">
+            <option value="0">-- Chọn Job từ danh sách CVAT (tự động nạp Task & Frame map) --</option>
+            @foreach (var job in CvatJobList)
+            {
+                var jId = GetInt(job, "id", 0);
+                var tName = GetString(job, "task_name", "Task");
+                var fCount = GetInt(job, "frame_count", 0);
+                var jState = GetString(job, "state", "in progress");
+                var jStage = GetString(job, "stage", "annotation");
+                <option value="@jId" selected="@(CvatJobId == jId)">Job #@jId · @tName (Số frame: @fCount | Stage: @jStage | State: @jState)</option>
+            }
+        </select>
+    </div>
+
+    <div class="cvat-fields">
+        <label>
+            CVAT Job ID
+            <input type="number" min="1" @bind="CvatJobId" placeholder="Nhập Job ID" />
+        </label>
+        <label>
+            First frame offset
+            <input type="number" min="0" @bind="CvatFrameOffset" />
+        </label>
+        <label>
+            Assignee user ID (tùy chọn)
+            <input type="number" min="0" @bind="CvatAssigneeId" placeholder="User ID" />
+        </label>
+        <label class="compact-upload" for="cvat-map-file">
+            <InputFile id="cvat-map-file" OnChange="OnCvatMappingSelected" accept=".csv,.json,application/json,text/csv" />
+            <i class="bi bi-file-earmark-spreadsheet"></i>
+            <span>@(CvatMappingFileName ?? "Nạp file frame map tùy chỉnh")</span>
+            <small>@(CvatFrameMap.Count > 0 ? $"{CvatFrameMap.Count} frames đã map" : "Tự động lấy từ metadata job")</small>
+        </label>
+        <button class="outline-button" disabled="@(CvatJobId <= 0 || IsBusy)" @onclick="LoadCvatFrameMap">
+            <i class="bi bi-arrow-repeat"></i> Nạp Frame Map từ CVAT
+        </button>
+        <button class="outline-button" disabled="@IsBusy" @onclick="LoadCvatJobs">
+            <i class="bi bi-arrow-clockwise"></i> Làm mới danh sách Job
+        </button>
+    </div>
+
+    <div class="cvat-options-grid">
+        <label>
+            <input type="checkbox" @bind="UpdateJobStateOnReturn" />
+            <b>Đổi trạng thái Job khi trả về (Update Stage/State)</b>
+        </label>
+        <label>
+            <input type="checkbox" @bind="IncludeAllUnreviewed" />
+            <span>Đẩy toàn bộ @IssueCount issue phát hiện (không chỉ các issue đã bấm Confirm)</span>
+        </label>
+        <label>
+            <span>Target Stage:</span>
+            <select @bind="TargetStage">
+                <option value="annotation">annotation (Trả về cho annotator)</option>
+                <option value="validation">validation (Chờ kiểm tra lại)</option>
+                <option value="acceptance">acceptance (Nghiệm thu)</option>
+            </select>
+        </label>
+        <label>
+            <span>Target State:</span>
+            <select @bind="TargetState">
+                <option value="rejected">rejected (Từ chối / Cần sửa lỗi)</option>
+                <option value="in progress">in progress (Đang thực hiện)</option>
+                <option value="completed">completed (Đã xong)</option>
+            </select>
+        </label>
+    </div>
+
+    @if (CvatFrameMap.Count == 0)
+    {
+        <label class="cvat-confirm">
+            <input type="checkbox" @bind="ConfirmOffsetMapping" /> Tôi xác nhận thứ tự frame tải lên khớp với frame offset của CVAT Job.
+        </label>
+    }
+
+    <div class="cvat-buttons">
+        <button class="primary-button btn-return-cvat" disabled="@(CvatJobId <= 0 || (IssueCount == 0 && ConfirmedIssueCount == 0) || IsBusy)" @onclick="() => PushCvatIssues(true)">
+            <i class="bi bi-arrow-return-left"></i> ⚡ TRẢ JOB #@CvatJobId VỀ CVAT KÈM ISSUES (@(IncludeAllUnreviewed ? IssueCount : ConfirmedIssueCount) issues)
+        </button>
+        <button class="outline-button" disabled="@(CvatJobId <= 0 || (IssueCount == 0 && ConfirmedIssueCount == 0) || IsBusy)" @onclick="() => PushCvatIssues(false)">
+            <i class="bi bi-send"></i> Chỉ đẩy Issues (Giữ nguyên trạng thái Job)
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(CvatJobResultUrl))
+    {
+        <div class="cvat-result-card">
+            <div class="cvat-result-head">
+                <span class="cvat-success-icon"><i class="bi bi-check-circle-fill"></i></span>
+                <div>
+                    <h4>ĐÃ TRẢ JOB VỀ CVAT THÀNH CÔNG</h4>
+                    <p>Job ID: <b>#@CvatJobId</b> · Stage: <b>@TargetStage</b> · State: <b>@TargetState</b></p>
+                </div>
+            </div>
+            <div class="cvat-result-actions">
+                <a href="@CvatJobResultUrl" target="_blank" class="primary-button cvat-open-btn">
+                    <i class="bi bi-box-arrow-up-right"></i> Mở thẳng Job trên CVAT (có sẵn issue)
+                </a>
+            </div>
+        </div>
+    }
+
+    <small class="cvat-help">
+        CVAT kết nối qua <code>CVAT_URL</code> và <code>CVAT_ACCESS_TOKEN</code> trong môi trường backend. Issue ghi kèm frame, vị trí bằng chứng, nội dung và guideline citation; cần kiểm tra đúng job/frame map trước khi gửi.
+    </small>
+</div>
+                }
+            }
+            else
+            {
+                <section class="welcome-row"><div><div class="eyebrow">DELIVERY / REPORTS</div><h1>Export review results</h1><p>Download the QC report and corrected guideline revision for your team.</p></div><span class="step-counter">03 <i>/ 03</i></span></section>
+                @if (Frames.Count == 0) { <div class="empty-state"><span class="empty-icon"><i class="bi bi-file-earmark-bar-graph"></i></span><h2>Nothing to export</h2><p>Run QC on a dataset first.</p><button class="primary-button" @onclick="() => Step = 0">Prepare dataset <i class="bi bi-arrow-right"></i></button></div> }
+                else { <div class="export-summary"><span class="export-icon"><i class="bi bi-clipboard2-check"></i></span><div><span class="eyebrow">QC RUN READY</span><h2>@LabelFileName</h2><p>@Frames.Count frames · @IssueCount model/rule candidates · @ConfirmedIssueCount confirmed by reviewer · guideline v@(GetInt(ResultRoot, "guideline_version", 0))</p></div><span class="run-badge"><i class="bi bi-check-circle"></i> Analysis complete</span></div><div class="status-message"><i class="bi bi-info-circle"></i> @ModelStatusText. Model differences are review candidates, not automatic label corrections. Guideline provenance: @GetString(ResultRoot, "guideline_sha256", "no active guideline hash recorded").</div><div class="export-grid"><article class="export-card"><span class="export-card-icon violet"><i class="bi bi-filetype-md"></i></span><h2>Reviewer feedback</h2><p>Markdown report grouped by frame with evidence, decisions and guideline context.</p><button class="primary-button" @onclick="ExportFeedback"><i class="bi bi-download"></i> Download .md</button></article><article class="export-card"><span class="export-card-icon mint"><i class="bi bi-filetype-csv"></i></span><h2>@(Mode == "segmentation" ? "Per-class IoU & issue register" : "Issue register")</h2><p>CSV includes frame, class, model comparison, severity, decision, and guideline citation.</p><button class="outline-button" @onclick="ExportCsv"><i class="bi bi-download"></i> Download .csv</button></article><article class="export-card"><span class="export-card-icon amber"><i class="bi bi-journal-arrow-down"></i></span><h2>Guideline update draft</h2><p>Starts from the current text and proposes clauses only from issues you confirmed. Draft is not activated.</p><button class="outline-button" @onclick="ExportGuideline"><i class="bi bi-download"></i> Generate draft .md</button></article></div> }
+            }
+        </main>
+    </div>
+</div>
+
+@if (GuidelineOpen)
+{
+    <div class="modal-scrim" @onclick="() => GuidelineOpen = false"><section class="guideline-modal" @onclick:stopPropagation="true"><div class="modal-head"><div><span class="eyebrow">WORKSPACE POLICY</span><h2>Search & edit guideline</h2></div><button class="icon-button" @onclick="() => GuidelineOpen = false"><i class="bi bi-x-lg"></i></button></div><label class="guideline-search">Find a clause<input @bind="GuidelineSearch" placeholder="class, threshold, attribute…" /></label>@if (GuidelineMatches.Any()) { <div class="guideline-matches">@foreach (var match in GuidelineMatches) { <div>@match</div> }</div> }<textarea @bind="GuidelineText" spellcheck="false"></textarea><div class="modal-foot"><span>@GuidelineText.Length characters · versioned in local workspace</span><button class="outline-button" @onclick="() => SaveGuidelineDraft()">Save draft</button><button class="primary-button" @onclick="() => SaveGuidelineDraft(true)">Activate for next run</button></div></section></div>
+}
+
+@code {
+    private string Mode = "bbox";
+    private int Step;
+    private bool IsBusy;
+    private bool ApiOnline;
+    private string ModelsMode = "disabled";
+    private bool HasError;
+    private string? StatusMessage;
+    private string? LabelFileName;
+    private string? GuidelineFileName;
+    private string? ProfileFileName;
+    private JsonElement? ProfileJson;
+    private string WorkspaceName = "Local workspace";
+    private string? WorkspaceId;
+    private bool ShowModelMask;
+    private double ZoomLevel = 1.0;
+    private bool IsFullscreen = false;
+    private bool OnlyShowIssues = true;
+    private bool SwapHumanAndModel = true;
+    private bool ShowHumanBoxes = true;
+    private bool ShowModelBoxes = true;
+    private bool ShowIssueBoxes = true;
+    private bool ShowTextLabels = false;
+    private string? ActiveIssueId;
+    private string? ActiveObjectId;
+    private string? SelectedFrameName;
+    private string QueueFilter = "all";
+    private JsonElement? LabelsJson;
+    private JsonElement? SelectedFrame;
+    private JsonElement ResultRoot;
+    private List<JsonElement> Frames = new();
+    private Dictionary<string, string> ImageFiles = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> MaskFiles = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> IndexMaskFiles = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> IssueDecisions = new(StringComparer.Ordinal);
+    private string GuidelineText = "";
+    private string GuidelineSearch = "";
+    private IEnumerable<string> GuidelineMatches => string.IsNullOrWhiteSpace(GuidelineSearch) ? Enumerable.Empty<string>() : GuidelineText.Split('\n').Where(line => line.Contains(GuidelineSearch, StringComparison.OrdinalIgnoreCase)).Take(20);
+    private bool GuidelineOpen;
+    private int CvatJobId;
+    private int CvatFrameOffset;
+    private int CvatAssigneeId;
+    private string? CvatMappingFileName;
+    private Dictionary<string, int> CvatFrameMap = new(StringComparer.OrdinalIgnoreCase);
+    private bool ConfirmOffsetMapping;
+    private string CvatStateLabel = "CVAT CONNECTED";
+    private List<JsonElement> CvatJobList = new();
+    private List<JsonElement> ModelProviders = new();
+    private bool UseGemini;
+    private bool GeminiConfigured;
+    private string GeminiModel = "gemini-3.8-flash";
+    private int GeminiFrameLimit = 10;
+    private string? CvatJobResultUrl;
+    private string TargetStage = "annotation";
+    private string TargetState = "rejected";
+    private bool IncludeAllUnreviewed = true;
+    private bool UpdateJobStateOnReturn = true;
+    private List<JsonElement> SelectedIssues => SelectedFrame is null ? new() : GetArray(SelectedFrame.Value, "errors");
+    private IEnumerable<JsonElement> VisibleFrames => Frames.Where(f => QueueFilter == "all" || (QueueFilter == "review" ? GetInt(f, "priority_rank", 4) < 4 : GetInt(f, "priority_rank", 4) == 4));
+    private int ReviewCount => Frames.Count(f => GetInt(f, "priority_rank", 4) < 4);
+    private int PassCount => Frames.Count - ReviewCount;
+    private int IssueCount => Frames.Sum(f => GetArray(f, "errors").Count);
+    private int ConfirmedIssueCount => Frames.Sum(f => GetArray(f, "errors").Count(i => IssueDecisions.GetValueOrDefault(GetString(i, "issue_id", ""), GetString(i, "review_status", "pending")) == "confirmed"));
+    private int RejectedIssueCount => Frames.Sum(f => GetArray(f, "errors").Count(i => {
+        var d = IssueDecisions.GetValueOrDefault(GetString(i, "issue_id", ""), GetString(i, "review_status", "pending"));
+        return d == "rejected" || d == "dismissed";
+    }));
+    private int TotalDecidedCount => ConfirmedIssueCount + RejectedIssueCount;
+    private List<JsonElement> GetHumanLabelsList() => SelectedFrame is null ? new() : SwapHumanAndModel ? GetArray(SelectedFrame.Value, "model_predictions") : GetArray(SelectedFrame.Value, "labels");
+    private List<JsonElement> GetModelPredictionsList() => SelectedFrame is null ? new() : SwapHumanAndModel ? GetArray(SelectedFrame.Value, "labels") : GetArray(SelectedFrame.Value, "model_predictions");
+    private int HumanBoxCount => SelectedFrame is null ? 0 : GetHumanLabelsList().Select((l, idx) => (l, idx)).Count(t => {
+        var oid = GetString(t.l, "id", $"h_{t.idx}");
+        return !IsObjectRejected(oid) && (!OnlyShowIssues || HasLabelIssue(oid, t.idx) || IsObjectAccepted(oid));
+    });
+    private int ModelBoxCount => SelectedFrame is null ? 0 : GetModelPredictionsList().Select((p, idx) => (p, idx)).Count(t => {
+        var oid = GetString(t.p, "id", $"MODEL_{t.idx}");
+        return !IsPredictionRejected(t.idx) && !IsObjectRejected(oid) && (!OnlyShowIssues || HasPredictionIssue(t.idx) || HasLabelIssue(oid, t.idx) || IsPredictionAccepted(t.idx) || IsObjectAccepted(oid));
+    });
+    private int IssueBoxCount => SelectedIssues.Count(i => !IsIssueRejected(i));
+    private int FrameCount => LabelsJson is null ? 0 : ProfileJson is not null && GetString(ProfileJson.Value, "annotation_format", "") == "coco" ? GetArray(LabelsJson.Value, "images").Count : LabelsJson.Value.ValueKind == JsonValueKind.Array ? LabelsJson.Value.GetArrayLength() : GetArray(LabelsJson.Value, "data").Count;
+    private string SelectedModelText
+    {
+        get
+        {
+            var id = Mode == "segmentation" ? "segmentation" : "bbox";
+            var provider = ModelProviders.FirstOrDefault(p => GetString(p, "id", "") == id);
+            if (provider.ValueKind != JsonValueKind.Object) return $"{id} provider status unavailable";
+            if (!GetBool(provider, "available")) return $"{id} provider unavailable";
+            return $"{GetString(provider, "name", id)} · {GetString(provider, "device", "device unknown")}";
+        }
+    }
+    private string ModelStatusText => ModelsMode == "local" ? SelectedModelText : ModelsMode == "simulated" ? "Simulated mode · demo only" : "Rules · local models unavailable";
+    private HttpClient Api => HttpFactory.CreateClient("qc");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { var health = await Api.GetFromJsonAsync<JsonElement>("/api/health"); ApiOnline = GetString(health, "status", "") == "ok"; ModelsMode = GetString(health, "models_mode", "disabled"); }
+        catch { ApiOnline = false; }
+        if (ApiOnline)
+        {
+            try { var modelInfo = await Api.GetFromJsonAsync<JsonElement>("/api/models"); ModelProviders = GetArray(modelInfo, "providers"); GeminiConfigured = GetBool(GetObject(modelInfo, "gemini"), "configured"); GeminiModel = GetString(GetObject(modelInfo, "gemini"), "model", GeminiModel); UseGemini = GeminiConfigured; }
+            catch { ModelProviders.Clear(); }
+            try
+            {
+                var cvat = await Api.GetFromJsonAsync<JsonElement>("/api/cvat/status");
+                if (GetBool(cvat, "reachable"))
+                {
+                    CvatStateLabel = "CVAT CONNECTED";
+                    await LoadCvatJobs();
+                }
+                else
+                {
+                    CvatStateLabel = GetBool(cvat, "configured") ? "TOKEN / NETWORK ISSUE" : "TOKEN REQUIRED";
+                }
+            }
+            catch { CvatStateLabel = "CVAT STATUS UNKNOWN"; }
+        }
+    }
+
+    private void SetMode(string mode)
+    {
+        if (Mode == mode) return;
+        Mode = mode;
+        LabelsJson = null; LabelFileName = null; ProfileJson = null; ProfileFileName = null; Frames.Clear(); SelectedFrame = null; SelectedFrameName = null;
+        ImageFiles.Clear(); MaskFiles.Clear(); IndexMaskFiles.Clear(); IssueDecisions.Clear(); WorkspaceId = null; QueueFilter = "all"; Step = 0; ShowModelMask = false;
+        StatusMessage = mode == "segmentation" ? "Segmentation dùng manifest ảnh/mask riêng; hãy tải lại đúng một pack segmentation." : "BBox dùng annotations cho detection; hãy tải lại pack BBox.";
+        HasError = false;
+    }
+    private async Task OnProfileSelected(InputFileChangeEventArgs e)
+    {
+        try { await using var stream = e.File.OpenReadStream(2 * 1024 * 1024); using var doc = await JsonDocument.ParseAsync(stream); if (doc.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Profile phải là một JSON object."); ProfileJson = doc.RootElement.Clone(); ProfileFileName = e.File.Name; StatusMessage = $"Đã nạp schema/profile {e.File.Name}."; HasError = false; }
+        catch (Exception ex) { ProfileJson = null; StatusMessage = $"Không đọc được profile: {ex.Message}"; HasError = true; }
+    }
+    private async Task OnLabelsSelected(InputFileChangeEventArgs e)
+    {
+        try { var file = e.File; await using var stream = file.OpenReadStream(512 * 1024 * 1024); using var doc = await JsonDocument.ParseAsync(stream); LabelsJson = doc.RootElement.Clone(); LabelFileName = file.Name; if (WorkspaceName == "Local workspace") WorkspaceName = Path.GetFileNameWithoutExtension(file.Name); StatusMessage = $"Đã đọc {FrameCount} frame từ {file.Name}."; HasError = false; }
+        catch (Exception ex) { LabelsJson = null; StatusMessage = $"Không đọc được file nhãn JSON: {ex.Message}"; HasError = true; }
+    }
+    private async Task OnGuidelineSelected(InputFileChangeEventArgs e)
+    {
+        try { await using var stream = e.File.OpenReadStream(4 * 1024 * 1024); using var reader = new StreamReader(stream); GuidelineText = await reader.ReadToEndAsync(); GuidelineFileName = e.File.Name; await SaveGuidelineDraft(true); }
+        catch (Exception ex) { StatusMessage = $"Không đọc được guideline: {ex.Message}"; HasError = true; }
+    }
+    private async Task EnsureWorkspace()
+    {
+        var profile = ProfileJson is null ? new Dictionary<string, object?>() : JsonSerializer.Deserialize<Dictionary<string, object?>>(ProfileJson.Value.GetRawText()) ?? new();
+        profile["task_type"] = Mode == "segmentation" ? "semantic_segmentation" : "bbox";
+        profile.TryAdd("annotation_format", "bdd100k");
+        if (WorkspaceId is null)
+        {
+            using var response = await Api.PostAsJsonAsync("/api/workspaces", new { name = WorkspaceName, profile });
+            var text = await response.Content.ReadAsStringAsync(); if (!response.IsSuccessStatusCode) throw new InvalidOperationException(text);
+            using var doc = JsonDocument.Parse(text); WorkspaceId = GetString(GetProperty(doc.RootElement, "workspace"), "id", "");
+        }
+        else
+        {
+            using var response = await Api.PutAsJsonAsync($"/api/workspaces/{WorkspaceId}", new { profile });
+            if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await response.Content.ReadAsStringAsync());
+        }
+    }
+    private async Task SaveGuidelineDraft(bool activate = false)
+    {
+        if (string.IsNullOrWhiteSpace(GuidelineText)) return;
+        try
+        {
+            await EnsureWorkspace();
+            using var res = await Api.PostAsJsonAsync("/api/guideline", new { workspace_id = WorkspaceId, guideline_text = GuidelineText, activate });
+            var body = await res.Content.ReadAsStringAsync(); if (!res.IsSuccessStatusCode) throw new InvalidOperationException(body);
+            using var doc = JsonDocument.Parse(body); var version = GetInt(doc.RootElement, "version", 0);
+            StatusMessage = $"Đã lưu guideline workspace v{version} ({(activate ? "active for next run" : "draft; not applied to runs")})."; HasError = false; GuidelineOpen = false;
+        }
+        catch (Exception ex) { StatusMessage = $"Không lưu được guideline: {ex.Message}"; HasError = true; }
+    }
+
+    private async Task LoadQuickDemoPack()
+    {
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "Đang nạp nhanh bộ dữ liệu demo từ DEMO_PACK...";
+            StateHasChanged();
+
+            string? demoDir = null;
+            var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+            while (dir != null)
+            {
+                var candidate = Path.Combine(dir.FullName, "DEMO_PACK", Mode == "segmentation" ? "SEGMENTATION" : "BBOX");
+                if (Directory.Exists(candidate))
+                {
+                    demoDir = candidate;
+                    break;
+                }
+                dir = dir.Parent;
+            }
+
+            if (demoDir == null)
+            {
+                throw new DirectoryNotFoundException("Không tìm thấy thư mục DEMO_PACK trên máy.");
+            }
+
+            // 1. Labels
+            var jsonPath = Path.Combine(demoDir, "annotations.json");
+            if (File.Exists(jsonPath))
+            {
+                var jsonBytes = await File.ReadAllBytesAsync(jsonPath);
+                using var doc = JsonDocument.Parse(jsonBytes);
+                LabelsJson = doc.RootElement.Clone();
+                LabelFileName = $"annotations.json (DEMO {FrameCount} frames)";
+                WorkspaceName = "BDD100K Demo Run";
+            }
+
+            // 2. Guideline
+            var guidePath = Path.Combine(demoDir, "guideline.md");
+            if (File.Exists(guidePath))
+            {
+                GuidelineText = await File.ReadAllTextAsync(guidePath);
+                GuidelineFileName = "guideline.md (DEMO)";
+                await SaveGuidelineDraft(true);
+            }
+
+            // 3. Images
+            var imgDir = Path.Combine(demoDir, "images");
+            if (Directory.Exists(imgDir))
+            {
+                ImageFiles.Clear();
+                foreach (var imgFile in Directory.GetFiles(imgDir, "*.jpg"))
+                {
+                    var fName = Path.GetFileName(imgFile);
+                    var b = await File.ReadAllBytesAsync(imgFile);
+                    ImageFiles[fName] = $"data:image/jpeg;base64,{Convert.ToBase64String(b)}";
+                }
+            }
+
+            if (Mode == "segmentation")
+            {
+                var colorDir = Path.Combine(demoDir, "masks_color");
+                if (Directory.Exists(colorDir))
+                {
+                    MaskFiles.Clear();
+                    foreach (var mFile in Directory.GetFiles(colorDir, "*.png"))
+                    {
+                        var fName = Path.GetFileName(mFile);
+                        var b = await File.ReadAllBytesAsync(mFile);
+                        MaskFiles[fName] = $"data:image/png;base64,{Convert.ToBase64String(b)}";
+                    }
+                }
+                var indexDir = Path.Combine(demoDir, "masks_index");
+                if (Directory.Exists(indexDir))
+                {
+                    IndexMaskFiles.Clear();
+                    foreach (var mFile in Directory.GetFiles(indexDir, "*.png"))
+                    {
+                        var fName = Path.GetFileName(mFile);
+                        var b = await File.ReadAllBytesAsync(mFile);
+                        IndexMaskFiles[fName] = $"data:image/png;base64,{Convert.ToBase64String(b)}";
+                    }
+                }
+            }
+
+            StatusMessage = $"⚡ Đã nạp trọn bộ DEMO thành công: {FrameCount} frame, guideline và {ImageFiles.Count} ảnh! Bạn hãy bấm 'Run local QC' bên dưới để bắt đầu.";
+            HasError = false;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi nạp demo: {ex.Message}";
+            HasError = true;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task OnImagesSelected(InputFileChangeEventArgs e)
+    {
+        foreach (var file in e.GetMultipleFiles(200)) { await using var stream = file.OpenReadStream(20 * 1024 * 1024); using var ms = new MemoryStream(); await stream.CopyToAsync(ms); ImageFiles[file.Name] = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}"; }
+        StatusMessage = $"Đã gắn {ImageFiles.Count} ảnh để preview trong phiên này."; HasError = false;
+    }
+    private async Task OnMasksSelected(InputFileChangeEventArgs e)
+    {
+        foreach (var file in e.GetMultipleFiles(200)) { await using var stream = file.OpenReadStream(20 * 1024 * 1024); using var ms = new MemoryStream(); await stream.CopyToAsync(ms); MaskFiles[file.Name] = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}"; }
+        StatusMessage = $"Đã gắn {MaskFiles.Count} color mask để overlay."; HasError = false;
+    }
+    private async Task OnIndexMasksSelected(InputFileChangeEventArgs e)
+    {
+        foreach (var file in e.GetMultipleFiles(200)) { await using var stream = file.OpenReadStream(20 * 1024 * 1024); using var ms = new MemoryStream(); await stream.CopyToAsync(ms); IndexMaskFiles[file.Name] = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}"; }
+        StatusMessage = $"Đã gắn {IndexMaskFiles.Count} train-ID mask cho pixel-level comparison."; HasError = false;
+    }
+    private async Task RunQc()
+    {
+        if (LabelsJson is null) return;
+        IsBusy = true; HasError = false; StatusMessage = null;
+        try
+        {
+            await EnsureWorkspace();
+            var data = LabelsJson.Value;
+            var images = ImageFiles.ToDictionary(pair => pair.Key, pair => pair.Value);
+            var payload = new Dictionary<string, object?> { ["workspace_id"] = WorkspaceId, ["task_type"] = Mode == "segmentation" ? "semantic_segmentation" : "bbox", ["data"] = data, ["images"] = images, ["use_gemini"] = UseGemini, ["gemini_frame_limit"] = Math.Clamp(GeminiFrameLimit, 1, 50) };
+            if (Mode == "segmentation")
+            {
+                var rows = LabelsJson.Value.ValueKind == JsonValueKind.Array ? LabelsJson.Value.EnumerateArray().Select(x => x.Clone()).ToList() : GetArray(LabelsJson.Value, "data");
+                foreach (var row in rows)
+                {
+                    var name = GetString(row, "name", "");
+                    var indexPath = GetString(row, "mask_index", "");
+                    var colorPath = GetString(row, "mask_color", "");
+                    var indexName = Path.GetFileName(indexPath.Replace('/', Path.DirectorySeparatorChar));
+                    var colorName = Path.GetFileName(colorPath.Replace('/', Path.DirectorySeparatorChar));
+                    if (string.IsNullOrWhiteSpace(name) || !ImageFiles.ContainsKey(name)) throw new InvalidOperationException($"Thiếu ảnh JPG tương ứng cho frame '{name}'. Chọn toàn bộ ảnh images/.");
+                    if (string.IsNullOrWhiteSpace(indexName) || !IndexMaskFiles.ContainsKey(indexName)) throw new InvalidOperationException($"Thiếu train-ID mask cho frame '{name}'. Chọn PNG từ masks/index/.");
+                    if (string.IsNullOrWhiteSpace(colorName) || !MaskFiles.ContainsKey(colorName)) throw new InvalidOperationException($"Thiếu color mask cho frame '{name}'. Chọn PNG từ masks/color/.");
+                }
+                payload["masks"] = IndexMaskFiles.ToDictionary(pair => pair.Key, pair => pair.Value);
+            }
+            using var response = await Api.PostAsJsonAsync("/api/qc/run", payload);
+            var body = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode) throw new InvalidOperationException(body);
+            using var doc = JsonDocument.Parse(body); ResultRoot = doc.RootElement.Clone(); Frames = GetArray(ResultRoot, "sorted_frames");
+            if (Frames.Count == 0) throw new InvalidOperationException("API không trả về frame nào. Kiểm tra profile, taxonomy và mask mapping.");
+            IssueDecisions.Clear(); SelectedFrameName = GetString(Frames[0], "frame_name", ""); SelectedFrame = Frames[0]; Step = 1; ApiOnline = true; ShowModelMask = false;
+            var models = GetArray(ResultRoot, "models");
+            var skipped = GetArray(ResultRoot, "model_skips").Count;
+            StatusMessage = UseGemini
+                ? $"Đã chạy QC local + Gemini {GeminiModel}: {GetInt(ResultRoot, "model_issues", 0)} candidate issues tổng cộng. Gemini đã kiểm tra {GetInt(GetObject(ResultRoot, "gemini"), "frames_checked", 0)} frame; mọi đề xuất cần người xác nhận. Ảnh và guideline đã được gửi tới Google."
+                : Mode == "segmentation"
+                ? $"Đã chạy local segmentation: {models.Count} model, {GetInt(ResultRoot, "model_issues", 0)} candidate issue. Macro IoU chỉ là so sánh run này, chưa phải benchmark."
+                : $"Đã chạy QC + local detector: {models.Count} model, {GetInt(ResultRoot, "model_issues", 0)} candidate issue; {skipped} frame chưa có ảnh/model result. Candidate cần người xác nhận.";
+        }
+        catch (Exception ex) { StatusMessage = $"Phân tích thất bại: {ex.Message}"; HasError = true; }
+        finally { IsBusy = false; }
+    }
+    private void SelectFrame(string name) { SelectedFrameName = name; SelectedFrame = Frames.FirstOrDefault(f => GetString(f, "frame_name", "") == name); }
+    private string? GetMaskUrl(JsonElement frame)
+    {
+        if (ShowModelMask && frame.TryGetProperty("prediction_mask_png_base64", out var predicted) && predicted.ValueKind == JsonValueKind.String)
+            return $"data:image/png;base64,{predicted.GetString()}";
+        return MaskFiles.TryGetValue(GetString(frame, "mask_color", ""), out var data) ? data : null;
+    }
+    private static bool HasModelMask(JsonElement frame) => frame.TryGetProperty("prediction_mask_png_base64", out var predicted) && predicted.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(predicted.GetString());
+    private void ZoomIn() => ZoomLevel = Math.Min(3.0, Math.Round(ZoomLevel + 0.25, 2));
+    private void ZoomOut() => ZoomLevel = Math.Max(0.5, Math.Round(ZoomLevel - 0.25, 2));
+    private void FitView() => ZoomLevel = 1.0;
+    private async Task ToggleFullscreen()
+    {
+        IsFullscreen = !IsFullscreen;
+        try
+        {
+            await JS.InvokeVoidAsync("toggleFullscreen", ".canvas-panel");
+        }
+        catch { }
+    }
+
+    private bool HasLabelIssue(string objId, int idx)
+    {
+        if (SelectedIssues.Count == 0) return false;
+        return SelectedIssues.Any(i => {
+            var oid = GetString(i, "object_id", "");
+            var issueId = GetString(i, "issue_id", "");
+            if (!string.IsNullOrEmpty(objId) && (oid == objId || oid.Contains(objId))) return true;
+            if (oid == $"obj_{idx}") return true;
+            if (!string.IsNullOrEmpty(objId) && issueId.Contains($":{objId}:")) return true;
+            if (issueId.Contains($":obj_{idx}:")) return true;
+            return false;
+        });
+    }
+
+    private bool HasPredictionIssue(int idx)
+    {
+        if (SelectedIssues.Count == 0) return false;
+        return SelectedIssues.Any(i => {
+            var oid = GetString(i, "object_id", "");
+            var issueId = GetString(i, "issue_id", "");
+            if (oid == $"MODEL_{idx}") return true;
+            if (issueId.Contains($":prediction:{idx}")) return true;
+            return false;
+        });
+    }
+
+    private void SelectIssue(JsonElement issue)
+    {
+        ActiveIssueId = GetString(issue, "issue_id", "");
+        ActiveObjectId = GetString(issue, "object_id", "");
+    }
+
+    private void OnBoxClicked(string objectId)
+    {
+        ActiveObjectId = objectId;
+        var issue = SelectedIssues.FirstOrDefault(i => GetString(i, "object_id", "") == objectId || GetString(i, "object_id", "").Contains(objectId));
+        if (issue.ValueKind == JsonValueKind.Object)
+        {
+            ActiveIssueId = GetString(issue, "issue_id", "");
+        }
+    }
+
+    private void AcceptIssue(JsonElement issue)
+    {
+        SetIssueDecision(issue, "confirmed");
+        var objId = GetString(issue, "object_id", "");
+        if (!string.IsNullOrEmpty(objId)) IssueDecisions[objId] = "confirmed";
+        ActiveIssueId = GetString(issue, "issue_id", "");
+        ActiveObjectId = objId;
+    }
+
+    private void RejectIssue(JsonElement issue)
+    {
+        SetIssueDecision(issue, "rejected");
+        var objId = GetString(issue, "object_id", "");
+        if (!string.IsNullOrEmpty(objId)) IssueDecisions[objId] = "rejected";
+        ActiveIssueId = GetString(issue, "issue_id", "");
+        ActiveObjectId = objId;
+    }
+
+    private void UndoIssueDecision(JsonElement issue)
+    {
+        SetIssueDecision(issue, "pending");
+        var objId = GetString(issue, "object_id", "");
+        if (!string.IsNullOrEmpty(objId)) IssueDecisions.Remove(objId);
+    }
+
+    private bool IsObjectRejected(string objectId)
+    {
+        if (string.IsNullOrEmpty(objectId)) return false;
+        if (IssueDecisions.TryGetValue(objectId, out var d) && (d == "rejected" || d == "dismissed")) return true;
+        return SelectedIssues.Any(i => {
+            var oid = GetString(i, "object_id", "");
+            return (oid == objectId || oid.Contains(objectId)) && (GetIssueDecision(i) == "rejected" || GetIssueDecision(i) == "dismissed");
+        });
+    }
+
+    private bool IsObjectAccepted(string objectId)
+    {
+        if (string.IsNullOrEmpty(objectId)) return false;
+        if (IssueDecisions.TryGetValue(objectId, out var d) && d == "confirmed") return true;
+        return SelectedIssues.Any(i => {
+            var oid = GetString(i, "object_id", "");
+            return (oid == objectId || oid.Contains(objectId)) && GetIssueDecision(i) == "confirmed";
+        });
+    }
+
+    private bool IsPredictionRejected(int idx)
+    {
+        var predId = $"MODEL_{idx}";
+        if (IssueDecisions.TryGetValue(predId, out var d) && (d == "rejected" || d == "dismissed")) return true;
+        return SelectedIssues.Any(i => (GetString(i, "object_id", "") == predId || GetString(i, "issue_id", "").Contains($":prediction:{idx}")) && (GetIssueDecision(i) == "rejected" || GetIssueDecision(i) == "dismissed"));
+    }
+
+    private bool IsPredictionAccepted(int idx)
+    {
+        var predId = $"MODEL_{idx}";
+        if (IssueDecisions.TryGetValue(predId, out var d) && d == "confirmed") return true;
+        return SelectedIssues.Any(i => (GetString(i, "object_id", "") == predId || GetString(i, "issue_id", "").Contains($":prediction:{idx}")) && GetIssueDecision(i) == "confirmed");
+    }
+
+    private bool IsIssueRejected(JsonElement issue)
+    {
+        var d = GetIssueDecision(issue);
+        return d == "rejected" || d == "dismissed";
+    }
+
+    private bool IsIssueAccepted(JsonElement issue)
+    {
+        var d = GetIssueDecision(issue);
+        return d == "confirmed";
+    }
+
+    private void SetIssueDecision(JsonElement issue, string decision) { var id = GetString(issue, "issue_id", ""); if (id.Length > 0) IssueDecisions[id] = decision; }
+    private string GetIssueDecision(JsonElement issue) => IssueDecisions.GetValueOrDefault(GetString(issue, "issue_id", ""), GetString(issue, "review_status", "pending"));
+    private async Task OpenGuideline()
+    {
+        try { if (WorkspaceId is not null) { var g = await Api.GetFromJsonAsync<JsonElement>($"/api/guideline?workspace_id={WorkspaceId}"); GuidelineText = GetString(g, "raw_text", GuidelineText); } }
+        catch (Exception ex) { StatusMessage = $"Không tải được guideline workspace: {ex.Message}"; HasError = true; }
+        GuidelineOpen = true;
+    }
+    private async Task ExportFeedback()
+    {
+        try { using var res = await Api.PostAsJsonAsync("/api/export/feedback", new { sorted_frames = BuildFramesForCvat(), annotator_name = "Reviewer", guideline_version = GetInt(ResultRoot, "guideline_version", 0), guideline_sha256 = GetString(ResultRoot, "guideline_sha256", "") }); res.EnsureSuccessStatusCode(); var json = await res.Content.ReadFromJsonAsync<JsonElement>(); await Download("qc-review-feedback.md", GetString(json, "feedback_markdown", ""), "text/markdown"); }
+        catch (Exception ex) { StatusMessage = $"Không xuất được feedback: {ex.Message}"; HasError = true; }
+    }
+    private async Task ExportCsv()
+    {
+        try { var endpoint = Mode == "segmentation" ? "/api/export/segmentation-csv" : "/api/export/csv"; using var res = await Api.PostAsJsonAsync(endpoint, new { sorted_frames = BuildFramesForCvat(), guideline_version = GetInt(ResultRoot, "guideline_version", 0), guideline_sha256 = GetString(ResultRoot, "guideline_sha256", "") }); res.EnsureSuccessStatusCode(); var bytes = await res.Content.ReadAsByteArrayAsync(); await DownloadBytes(Mode == "segmentation" ? "qc-segmentation-class-iou.csv" : "qc-issue-register.csv", bytes, "text/csv"); }
+        catch (Exception ex) { StatusMessage = $"Không xuất được CSV: {ex.Message}"; HasError = true; }
+    }
+    private async Task ExportGuideline()
+    {
+        try { using var response = await Api.PostAsJsonAsync("/api/export/guideline-draft", new { guideline_text = GuidelineText, sorted_frames = BuildFramesForCvat(), guideline_version = GetInt(ResultRoot, "guideline_version", 0), guideline_sha256 = GetString(ResultRoot, "guideline_sha256", "") }); response.EnsureSuccessStatusCode(); var result = await response.Content.ReadFromJsonAsync<JsonElement>(); var count = GetInt(result, "confirmed_issue_groups", 0); await Download("team-guideline-update-draft.md", GetString(result, "draft_markdown", ""), "text/markdown"); StatusMessage = count == 0 ? "Đã xuất draft: chưa có issue được xác nhận nên chưa đề xuất điều khoản mới." : $"Đã xuất draft guideline từ {count} nhóm issue đã Confirm; hãy rà soát rồi mới upload/activate."; HasError = false; }
+        catch (Exception ex) { StatusMessage = $"Không tạo được guideline draft: {ex.Message}"; HasError = true; }
+    }
+    private List<Dictionary<string, object?>> BuildFramesForCvat()
+    {
+        var output = new List<Dictionary<string, object?>>();
+        foreach (var frame in Frames)
+        {
+            var row = JsonSerializer.Deserialize<Dictionary<string, object?>>(frame.GetRawText()) ?? new();
+            var issues = new List<Dictionary<string, object?>>();
+            foreach (var issue in GetArray(frame, "errors"))
+            {
+                var item = JsonSerializer.Deserialize<Dictionary<string, object?>>(issue.GetRawText()) ?? new();
+                item["review_status"] = GetIssueDecision(issue);
+                issues.Add(item);
+            }
+            row["errors"] = issues; output.Add(row);
+        }
+        return output;
+    }
+    private async Task OnCvatMappingSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            await using var stream = e.File.OpenReadStream(4 * 1024 * 1024); using var reader = new StreamReader(stream); var text = await reader.ReadToEndAsync();
+            if (e.File.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                using var doc = JsonDocument.Parse(text); var root = doc.RootElement.TryGetProperty("frame_map", out var map) ? map : doc.RootElement;
+                CvatFrameMap = root.EnumerateObject().ToDictionary(p => Path.GetFileName(p.Name), p => p.Value.GetInt32(), StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                var rows = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries).Skip(1);
+                CvatFrameMap = rows.Select(line => line.Split(',')).Where(cols => cols.Length >= 2)
+                    .ToDictionary(cols => Path.GetFileName(cols[0].Trim().Trim('"')), cols => int.Parse(cols[1].Trim().Trim('"')), StringComparer.OrdinalIgnoreCase);
+            }
+            CvatMappingFileName = e.File.Name; StatusMessage = $"Đã nạp mapping CVAT cho {CvatFrameMap.Count} frame."; HasError = false;
+        }
+        catch (Exception ex) { CvatFrameMap.Clear(); StatusMessage = $"Mapping CVAT không hợp lệ: {ex.Message}"; HasError = true; }
+    }
+    private async Task OnJobSelected(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var jid) && jid > 0)
+        {
+            CvatJobId = jid;
+            await LoadCvatFrameMap();
+        }
+    }
+    private async Task LoadCvatJobs()
+    {
+        try
+        {
+            var res = await Api.GetFromJsonAsync<JsonElement>("/api/cvat/jobs");
+            CvatJobList = GetArray(res, "jobs");
+            if (CvatJobId <= 0 && CvatJobList.Count > 0)
+            {
+                CvatJobId = GetInt(CvatJobList[0], "id", 0);
+                await LoadCvatFrameMap();
+            }
+            StatusMessage = $"Đã tải {CvatJobList.Count} job từ CVAT.";
+            HasError = false;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Không lấy được danh sách job từ CVAT: {ex.Message}";
+            HasError = true;
+        }
+    }
+    private async Task LoadCvatFrameMap()
+    {
+        if (CvatJobId <= 0) return;
+        try
+        {
+            var result = await Api.GetFromJsonAsync<JsonElement>($"/api/cvat/jobs/{CvatJobId}/frame-map");
+            CvatFrameMap = GetProperty(result, "frame_map").EnumerateObject().ToDictionary(p => Path.GetFileName(p.Name), p => p.Value.GetInt32(), StringComparer.OrdinalIgnoreCase);
+            CvatMappingFileName = $"CVAT Job {CvatJobId} metadata";
+            CvatStateLabel = "MAPPING LOADED";
+            StatusMessage = $"Đã nạp chính xác {CvatFrameMap.Count} frame metadata từ CVAT Job #{CvatJobId}.";
+            HasError = false;
+        }
+        catch (Exception ex) { StatusMessage = $"Không lấy được frame map từ CVAT: {ex.Message}"; HasError = true; }
+    }
+    private async Task PushCvatIssues(bool returnJob = true)
+    {
+        if (CvatJobId <= 0) { StatusMessage = "Vui lòng chọn hoặc nhập CVAT Job ID."; HasError = true; return; }
+        var totalAvailable = IncludeAllUnreviewed ? IssueCount : ConfirmedIssueCount;
+        if (totalAvailable == 0) { StatusMessage = "Không có issue nào để gửi lên CVAT."; HasError = true; return; }
+        IsBusy = true;
+        try
+        {
+            var payload = new
+            {
+                job_id = CvatJobId,
+                frame_offset = CvatFrameOffset,
+                frame_map = CvatFrameMap,
+                confirm_offset_mapping = ConfirmOffsetMapping || CvatFrameMap.Count > 0,
+                assignee_id = CvatAssigneeId > 0 ? CvatAssigneeId : (int?)null,
+                sorted_frames = BuildFramesForCvat(),
+                update_job_state = returnJob && UpdateJobStateOnReturn,
+                target_stage = TargetStage,
+                target_state = TargetState,
+                include_all_unreviewed = IncludeAllUnreviewed
+            };
+            using var response = await Api.PostAsJsonAsync("/api/cvat/push-issues", payload);
+            var body = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode) throw new InvalidOperationException(body);
+            using var result = JsonDocument.Parse(body);
+            var created = GetInt(result.RootElement, "created", 0);
+            var skipped = GetInt(result.RootElement, "skipped_existing", 0);
+            var failed = GetArray(result.RootElement, "failed").Count;
+            CvatJobResultUrl = GetString(result.RootElement, "cvat_job_url", $"http://127.0.0.1:8080/jobs/{CvatJobId}");
+            var jobStage = GetString(result.RootElement, "job_stage", TargetStage);
+            var jobState = GetString(result.RootElement, "job_state", TargetState);
+            StatusMessage = returnJob
+                ? $"✅ Đã trả Job #{CvatJobId} về CVAT! Tạo {created} issues trên các frame ({skipped} trùng lặp). Job đã chuyển sang Stage: {jobStage}, State: {jobState}."
+                : $"CVAT: Tạo {created} issues ({skipped} trùng lặp). Trạng thái job giữ nguyên.";
+            HasError = failed > 0;
+            CvatStateLabel = returnJob ? $"JOB RETURNED ({jobState.ToUpperInvariant()})" : "PUSH COMPLETE";
+        }
+        catch (Exception ex) { StatusMessage = $"Không đẩy được issue lên CVAT: {ex.Message}"; HasError = true; CvatStateLabel = "NOT CONNECTED"; }
+        finally { IsBusy = false; }
+    }
+    private async Task CopyIssue(JsonElement issue) { await JS.InvokeVoidAsync("navigator.clipboard.writeText", $"{GetString(issue,"error_type","Issue")}: {GetString(issue,"explanation","")}\nRule: {GetString(issue,"guideline_rule","")}"); StatusMessage = "Đã copy ghi chú issue."; }
+    private async Task Download(string name, string content, string type) => await DownloadBytes(name, System.Text.Encoding.UTF8.GetBytes(content), type);
+    private async Task DownloadBytes(string name, byte[] bytes, string type) => await JS.InvokeVoidAsync("qcDownload", name, type, Convert.ToBase64String(bytes));
+    private string? GetImageUrl(string frame) => ImageFiles.TryGetValue(frame, out var data) ? data : ApiOnline ? Navigation.ToAbsoluteUri($"qc-image/{Uri.EscapeDataString(frame)}").ToString() : null;
+    private static string Humanize(string value) => System.Text.RegularExpressions.Regex.Replace(value.Replace('_', ' ').ToLowerInvariant(), @"\b\w", m => m.Value.ToUpperInvariant());
+    private static string GetString(JsonElement element, string property, string fallback)
+    {
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(property, out var value)) return fallback;
+        return value.ValueKind switch { JsonValueKind.String => value.GetString() ?? fallback, JsonValueKind.Number => value.GetRawText(), _ => fallback };
+    }
+    private static JsonElement GetProperty(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) ? value : default;
+    private static string GetMetric(JsonElement element, string parent, string metric)
+    {
+        var value = GetProperty(GetProperty(element, parent), metric);
+        return value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) ? number.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture) : "—";
+    }
+    private static int GetInt(JsonElement element, string property, int fallback) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.TryGetInt32(out var n) ? n : fallback;
+    private static bool GetBool(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.True;
+    private static List<JsonElement> GetArray(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.Array ? v.EnumerateArray().Select(x => x.Clone()).ToList() : new();
+    private static JsonElement GetObject(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.Object ? v : default;
+    private static string GetStringArray(JsonElement element, string property) => string.Join(", ", GetArray(element, property).Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() : x.ToString()));
+    private static (double X, double Y, double W, double H)? GetBox(JsonElement label)
+    {
+        if (!label.TryGetProperty("box2d", out var b) || b.ValueKind != JsonValueKind.Object) return null;
+        double n(string k) => b.TryGetProperty(k, out var v) && v.TryGetDouble(out var d) ? d : 0;
+        var x = n("x1"); var y = n("y1"); var w = n("x2") - x; var h = n("y2") - y; return w > 0 && h > 0 ? (x, y, w, h) : null;
+    }
+    private static (double X, double Y, double W, double H)? GetPredictionBox(JsonElement prediction)
+    {
+        if (!prediction.TryGetProperty("box", out var box) || box.ValueKind != JsonValueKind.Array || box.GetArrayLength() < 4) return null;
+        var x = box[0].GetDouble(); var y = box[1].GetDouble(); var w = box[2].GetDouble() - x; var h = box[3].GetDouble() - y;
+        return w > 0 && h > 0 ? (x, y, w, h) : null;
+    }
+    private static (double X, double Y, double W, double H)? GetAnyBox(JsonElement el)
+    {
+        if (el.TryGetProperty("box2d", out _)) return GetBox(el);
+        if (el.TryGetProperty("box", out _)) return GetPredictionBox(el);
+        return null;
+    }
+    private (double X, double Y, double W, double H)? GetIssueBox(JsonElement issue)
+    {
+        if (issue.TryGetProperty("suggested_box", out var box) && box.ValueKind == JsonValueKind.Array && box.GetArrayLength() >= 4) return (box[0].GetDouble(), box[1].GetDouble(), box[2].GetDouble() - box[0].GetDouble(), box[3].GetDouble() - box[1].GetDouble());
+        if (SelectedFrame is not null)
+        {
+            var objectId = GetString(issue, "object_id", "");
+            var label = GetArray(SelectedFrame.Value, "labels").FirstOrDefault(item => GetString(item, "id", "") == objectId);
+            if (label.ValueKind == JsonValueKind.Object) return GetBox(label);
+        }
+        return null;
+    }
+    private static string GetPolygonPoints(JsonElement polygon)
+    {
+        if (!polygon.TryGetProperty("vertices", out var vertices) || vertices.ValueKind != JsonValueKind.Array) return "";
+        var points = new List<string>();
+        foreach (var point in vertices.EnumerateArray())
+            if (point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2 && point[0].TryGetDouble(out var x) && point[1].TryGetDouble(out var y))
+                points.Add($"{x.ToString(System.Globalization.CultureInfo.InvariantCulture)},{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        return string.Join(" ", points);
+    }
+}

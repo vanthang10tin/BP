@@ -1,0 +1,2196 @@
+[
+  {
+    "name": "7d06fefd-f7be05a6.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d06fefd-f7be05a6_train_id.png",
+    "mask_color": "masks/color/7d06fefd-f7be05a6_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7d128593-0ccfea4c.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d128593-0ccfea4c_train_id.png",
+    "mask_color": "masks/color/7d128593-0ccfea4c_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7d15b18b-1e0d6e3f.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d15b18b-1e0d6e3f_train_id.png",
+    "mask_color": "masks/color/7d15b18b-1e0d6e3f_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7d209219-ccdc1a09.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d209219-ccdc1a09_train_id.png",
+    "mask_color": "masks/color/7d209219-ccdc1a09_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7d22891c-224788c0.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d22891c-224788c0_train_id.png",
+    "mask_color": "masks/color/7d22891c-224788c0_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7d2f7975-e0c1c5a7.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d2f7975-e0c1c5a7_train_id.png",
+    "mask_color": "masks/color/7d2f7975-e0c1c5a7_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 3,
+        "name": "wall"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      },
+      {
+        "id": 15,
+        "name": "bus"
+      }
+    ]
+  },
+  {
+    "name": "7d35e395-ae41f911.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d35e395-ae41f911_train_id.png",
+    "mask_color": "masks/color/7d35e395-ae41f911_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7d4a9094-0455564b.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d4a9094-0455564b_train_id.png",
+    "mask_color": "masks/color/7d4a9094-0455564b_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7d5040af-1a6f933f.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d5040af-1a6f933f_train_id.png",
+    "mask_color": "masks/color/7d5040af-1a6f933f_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 3,
+        "name": "wall"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7d6c1119-00000000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d6c1119-00000000_train_id.png",
+    "mask_color": "masks/color/7d6c1119-00000000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7d6eb8b3-208131ff.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d6eb8b3-208131ff_train_id.png",
+    "mask_color": "masks/color/7d6eb8b3-208131ff_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7d83710e-4697c3b2.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d83710e-4697c3b2_train_id.png",
+    "mask_color": "masks/color/7d83710e-4697c3b2_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7d89b471-5b76bdb4.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d89b471-5b76bdb4_train_id.png",
+    "mask_color": "masks/color/7d89b471-5b76bdb4_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7d97d173-09388af3.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7d97d173-09388af3_train_id.png",
+    "mask_color": "masks/color/7d97d173-09388af3_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7daa6479-67988f3f.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7daa6479-67988f3f_train_id.png",
+    "mask_color": "masks/color/7daa6479-67988f3f_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      },
+      {
+        "id": 15,
+        "name": "bus"
+      }
+    ]
+  },
+  {
+    "name": "7dc08598-f42e2015.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7dc08598-f42e2015_train_id.png",
+    "mask_color": "masks/color/7dc08598-f42e2015_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      },
+      {
+        "id": 15,
+        "name": "bus"
+      }
+    ]
+  },
+  {
+    "name": "7dca6982-6971d025.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7dca6982-6971d025_train_id.png",
+    "mask_color": "masks/color/7dca6982-6971d025_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 12,
+        "name": "rider"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7dd1669f-5a249967.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7dd1669f-5a249967_train_id.png",
+    "mask_color": "masks/color/7dd1669f-5a249967_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 3,
+        "name": "wall"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 15,
+        "name": "bus"
+      }
+    ]
+  },
+  {
+    "name": "7de0a101-68335d0a.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7de0a101-68335d0a_train_id.png",
+    "mask_color": "masks/color/7de0a101-68335d0a_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 3,
+        "name": "wall"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7de7130e-3d65b555.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7de7130e-3d65b555_train_id.png",
+    "mask_color": "masks/color/7de7130e-3d65b555_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7df23ae0-00000000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7df23ae0-00000000_train_id.png",
+    "mask_color": "masks/color/7df23ae0-00000000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 3,
+        "name": "wall"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 15,
+        "name": "bus"
+      }
+    ]
+  },
+  {
+    "name": "7e1a88c5-66aa091b.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e1a88c5-66aa091b_train_id.png",
+    "mask_color": "masks/color/7e1a88c5-66aa091b_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7e23ea75-4e570000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e23ea75-4e570000_train_id.png",
+    "mask_color": "masks/color/7e23ea75-4e570000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7e23ea75-4e570001.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e23ea75-4e570001_train_id.png",
+    "mask_color": "masks/color/7e23ea75-4e570001_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7e23ea75-c9f30000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e23ea75-c9f30000_train_id.png",
+    "mask_color": "masks/color/7e23ea75-c9f30000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7e23ea75-c9f30001.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e23ea75-c9f30001_train_id.png",
+    "mask_color": "masks/color/7e23ea75-c9f30001_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7e23ea75-d0830001.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e23ea75-d0830001_train_id.png",
+    "mask_color": "masks/color/7e23ea75-d0830001_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7e365190-9193658c.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e365190-9193658c_train_id.png",
+    "mask_color": "masks/color/7e365190-9193658c_train_color.png",
+    "classes_present": [
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      }
+    ]
+  },
+  {
+    "name": "7e5ef657-00000000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e5ef657-00000000_train_id.png",
+    "mask_color": "masks/color/7e5ef657-00000000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7e5ef657-a9ad0000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e5ef657-a9ad0000_train_id.png",
+    "mask_color": "masks/color/7e5ef657-a9ad0000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7e5ef657-a9ad0001.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e5ef657-a9ad0001_train_id.png",
+    "mask_color": "masks/color/7e5ef657-a9ad0001_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7e788ad5-00000000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7e788ad5-00000000_train_id.png",
+    "mask_color": "masks/color/7e788ad5-00000000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ea0c1bd-fe29369b.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ea0c1bd-fe29369b_train_id.png",
+    "mask_color": "masks/color/7ea0c1bd-fe29369b_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ea536cf-9cb2ed5f.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ea536cf-9cb2ed5f_train_id.png",
+    "mask_color": "masks/color/7ea536cf-9cb2ed5f_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7eb52e47-49584e13.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7eb52e47-49584e13_train_id.png",
+    "mask_color": "masks/color/7eb52e47-49584e13_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 15,
+        "name": "bus"
+      }
+    ]
+  },
+  {
+    "name": "7eb7131c-420e1747.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7eb7131c-420e1747_train_id.png",
+    "mask_color": "masks/color/7eb7131c-420e1747_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 15,
+        "name": "bus"
+      }
+    ]
+  },
+  {
+    "name": "7ec0c9b1-00000000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ec0c9b1-00000000_train_id.png",
+    "mask_color": "masks/color/7ec0c9b1-00000000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ed0f644-ac730000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ed0f644-ac730000_train_id.png",
+    "mask_color": "masks/color/7ed0f644-ac730000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ed0f644-ac730001.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ed0f644-ac730001_train_id.png",
+    "mask_color": "masks/color/7ed0f644-ac730001_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ed63746-764b90a2.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ed63746-764b90a2_train_id.png",
+    "mask_color": "masks/color/7ed63746-764b90a2_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      },
+      {
+        "id": 17,
+        "name": "motorcycle"
+      }
+    ]
+  },
+  {
+    "name": "7ee1bbce-57ed1f51.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ee1bbce-57ed1f51_train_id.png",
+    "mask_color": "masks/color/7ee1bbce-57ed1f51_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 14,
+        "name": "truck"
+      }
+    ]
+  },
+  {
+    "name": "7ee2f122-4dbd9d07.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ee2f122-4dbd9d07_train_id.png",
+    "mask_color": "masks/color/7ee2f122-4dbd9d07_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ee5d536-808b2dd5.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ee5d536-808b2dd5_train_id.png",
+    "mask_color": "masks/color/7ee5d536-808b2dd5_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ee6d192-89e2408b.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ee6d192-89e2408b_train_id.png",
+    "mask_color": "masks/color/7ee6d192-89e2408b_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ef46d23-00000000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ef46d23-00000000_train_id.png",
+    "mask_color": "masks/color/7ef46d23-00000000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ef50949-51640000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ef50949-51640000_train_id.png",
+    "mask_color": "masks/color/7ef50949-51640000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7ef50949-51640001.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7ef50949-51640001_train_id.png",
+    "mask_color": "masks/color/7ef50949-51640001_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7efc3f4d-00000000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7efc3f4d-00000000_train_id.png",
+    "mask_color": "masks/color/7efc3f4d-00000000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 3,
+        "name": "wall"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 6,
+        "name": "traffic_light"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7f0b6105-00000000.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7f0b6105-00000000_train_id.png",
+    "mask_color": "masks/color/7f0b6105-00000000_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 9,
+        "name": "terrain"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 11,
+        "name": "person"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  },
+  {
+    "name": "7f121a33-526f912b.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "masks/index/7f121a33-526f912b_train_id.png",
+    "mask_color": "masks/color/7f121a33-526f912b_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ]
+  }
+]

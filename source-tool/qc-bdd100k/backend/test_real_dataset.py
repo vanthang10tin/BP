@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Script kiểm thử tự động trên tập dữ liệu THẬT BDD100K trong thư mục archive/
-Đọc 50-100 frame từ archive/bdd100k_labels_release/bdd100k/labels/bdd100k_labels_images_val.json,
-chạy 4 Tầng QA, xuất báo cáo CSV chuẩn hóa UTF-8 BOM chống lỗi font Excel,
-và trích xuất file real_val_sample_20.json để test trực tiếp trên Web UI.
+Script kiểm tra có giới hạn trên một số frame đầu của BDD100K validation.
+Chỉ giải mã số frame được yêu cầu, chạy các luật đang bật và xuất CSV UTF-8 BOM.
 """
 
 import os
@@ -15,6 +13,7 @@ from collections import Counter
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, CURRENT_DIR)
+sys.path.insert(0, os.path.abspath(os.path.join(CURRENT_DIR, "..", "tools")))
 
 if sys.platform == "win32":
     try:
@@ -26,9 +25,10 @@ if sys.platform == "win32":
         pass
 
 from qc_engine import BDDQualityChecker, DEFAULT_CONFIG
+from prepare_bdd100k_val_pack import first_json_array_items
 
 VAL_JSON_PATH = os.path.abspath(os.path.join(
-    CURRENT_DIR, "..", "..", "..", "..", "archive", "bdd100k_labels_release", "bdd100k", "labels", "bdd100k_labels_images_val.json"
+    CURRENT_DIR, "..", "..", "..", "..", "..", "archive", "bdd100k_labels_release", "bdd100k", "labels", "bdd100k_labels_images_val.json"
 ))
 OUTPUT_SUBSET_PATH = os.path.abspath(os.path.join(CURRENT_DIR, "..", "real_val_sample_20.json"))
 OUTPUT_CSV_PATH = os.path.abspath(os.path.join(CURRENT_DIR, "..", "real_data_qc_report.csv"))
@@ -43,15 +43,12 @@ def run_real_dataset_test(num_frames: int = 50):
         return
 
     print(f"[*] Đang nạp {num_frames} frames thực tế từ: {VAL_JSON_PATH}...")
-    with open(VAL_JSON_PATH, "r", encoding="utf-8") as f:
-        full_data = json.load(f)
-
-    subset = full_data[:num_frames]
+    subset = first_json_array_items(VAL_JSON_PATH, num_frames)
     print(f"  ✓ Đã nạp thành công {len(subset)} frames.")
 
     # Lưu 20 frame mẫu vào file real_val_sample_20.json để nạp trên UI
     with open(OUTPUT_SUBSET_PATH, "w", encoding="utf-8") as f:
-        json.dump(full_data[:20], f, indent=2, ensure_ascii=False)
+        json.dump(subset[:20], f, indent=2, ensure_ascii=False)
     print(f"  ✓ Đã trích xuất 20 frame thực tế ra: {OUTPUT_SUBSET_PATH} để test Web Dashboard.")
 
     # Chạy QC Engine
@@ -66,11 +63,10 @@ def run_real_dataset_test(num_frames: int = 50):
     print("-" * 70)
     print(f"  • Tổng số frame kiểm tra : {summary['total_frames']}")
     print(f"  • Tổng số vật thể (Labels): {summary['total_objects']}")
-    print(f"  • Số frame sạch (Auto-Pass): {summary['auto_pass_count']} ({summary['workload_reduction_pct']}%) -> Reviewer bỏ qua!")
-    print(f"  • Số frame cần Review     : {summary['need_review_count']} ({summary['defect_rate_pct']}%)")
+    print(f"  • Frame không có rule flag: {summary['auto_pass_count']} ({summary['no_rule_findings_pct']}%) — chưa được xác nhận là sạch.")
+    print(f"  • Frame bị rule gắn cờ     : {summary['need_review_count']} ({summary['rule_flagged_frame_pct']}%)")
     print(f"  • Quyết định nghiệm thu   : {summary['job_verdict']}")
-    print(f"  • Hiệu quả xếp hạng ưu tiên (Recall@20%): {summary['benchmark']['prioritized_recall_at_20']}%")
-    print(f"  • So với chọn ngẫu nhiên (Baseline 1)   : {summary['benchmark']['random_baseline_recall_at_20']}%")
+    print("  • Recall@20%: chưa đo (cần gold set độc lập được adjudicate).")
 
     print("\n🛡️ PHÂN BỐ LỖI THEO 4 TẦNG QA:")
     print(f"  • Tầng 1 (QC Luật - Hình học): {summary['layer_stats']['layer_1_rules_count']} lỗi")
@@ -128,8 +124,8 @@ def export_excel_compatible_csv(sorted_frames, file_path):
                     "Tầng QA Phát Hiện": "Tầng 3 (Pass)",
                     "Mã Loại Lỗi": "NONE",
                     "Mức Độ Nghiêm Trọng": "NONE",
-                    "Hội Đồng Model Phát Hiện": "All-Agreed",
-                    "Chi Tiết Vi Phạm & Điều Khoản Guideline": "Đồng thuận cao 98.5%, đạt chuẩn BDD100K.",
+                    "Hội Đồng Model Phát Hiện": "Không áp dụng (chưa nối model thật)",
+                    "Chi Tiết Vi Phạm & Điều Khoản Guideline": "Không có lỗi theo các luật đang bật; chưa được xác nhận bằng model hoặc gold set độc lập.",
                     "Đề Xuất Sửa Đổi Cho Annotator": "Không cần sửa (Pass)"
                 })
             else:

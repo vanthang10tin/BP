@@ -124,7 +124,7 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
           <div class="kpi-content">
-            <span class="kpi-label">🟢 Tỷ lệ Auto-Pass (Reviewer Bỏ Qua)</span>
+            <span class="kpi-label">🟢 Tỷ lệ frame không có rule flag (chưa xác nhận gold)</span>
             <div class="kpi-flex">
               <span id="kpi-auto-pass" class="kpi-value text-green">0%</span>
               <span id="kpi-auto-pass-sub" class="kpi-badge badge-success">0 frames</span>
@@ -140,7 +140,7 @@
             <span class="kpi-label">🔴 Cần Review Lại (Xếp từ Cao xuống Thấp)</span>
             <div class="kpi-flex">
               <span id="kpi-need-review" class="kpi-value text-red">0 frames</span>
-              <span id="kpi-defect-rate" class="kpi-badge badge-danger">0% lỗi</span>
+              <span id="kpi-defect-rate" class="kpi-badge badge-danger">— rule flags</span>
             </div>
           </div>
         </div>
@@ -150,7 +150,7 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           </div>
           <div class="kpi-content">
-            <span class="kpi-label">⚡ Quyết định Job (Theo QĐ-002)</span>
+            <span class="kpi-label">⚡ Trạng thái review rule</span>
             <span id="kpi-job-verdict" class="kpi-value text-yellow">Đang tính...</span>
           </div>
         </div>
@@ -334,7 +334,7 @@
                 <div id="reduction-bar-fill" class="reduction-bar-fill" style="width: 80%;"></div>
               </div>
               <div class="reduction-legend">
-                <span>🟢 Auto-Pass: <strong id="meter-pass-pct">80%</strong></span>
+                <span>🟢 Không có rule flag: <strong id="meter-pass-pct">—</strong></span>
                 <span>🔴 Cần Review: <strong id="meter-review-pct">20%</strong></span>
               </div>
             </div>
@@ -379,17 +379,17 @@
             <div class="benchmark-grid">
               <div class="benchmark-card highlight">
                 <span class="benchmark-title">Hệ Thống QC Ưu Tiên (Của Bạn)</span>
-                <span id="bench-prioritized-recall" class="benchmark-val text-green">75.0%</span>
-                <span class="benchmark-sub">Recall@20% (Bắt >= 70% lỗi chỉ với 20% mẫu)</span>
+                <span id="bench-prioritized-recall" class="benchmark-val text-green">N/A</span>
+                <span class="benchmark-sub">Chỉ tính sau khi có frame-level gold set độc lập</span>
               </div>
               <div class="benchmark-card">
                 <span class="benchmark-title">Baseline 1: Chọn Ngẫu Nhiên</span>
-                <span id="bench-random-recall" class="benchmark-val text-muted">20.0%</span>
-                <span class="benchmark-sub">20% frame chỉ phát hiện được 20% lỗi</span>
+                <span id="bench-random-recall" class="benchmark-val text-muted">N/A</span>
+                <span class="benchmark-sub">So sánh trên cùng tập gold và ngân sách review</span>
               </div>
               <div class="benchmark-card">
                 <span class="benchmark-title">Baseline 2: Xếp Theo Số Box</span>
-                <span id="bench-boxcount-recall" class="benchmark-val text-yellow">35.0%</span>
+                <span id="bench-boxcount-recall" class="benchmark-val text-yellow">N/A</span>
                 <span class="benchmark-sub">Ưu tiên frame nhiều box (dễ sót ca biên)</span>
               </div>
             </div>

@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-QC Engine - BDD100K 2D Quality Control Core Logic
-Tích hợp toàn diện 4 Tầng QA (VinUniversity Annotation & QC Curriculum - Slide 29):
-1. Tầng 1: Rule-based Deterministic Geometry & Ontology Engine (Slide 30)
-2. Tầng 2: Multi-Model Consensus & ObjectLab/Cleanlab Error Engine (Slide 31):
-   - 2 Model Bbox: YOLO26/27 + RT-DETRv3/D-FINE
-   - 2 Model Seg: Meta SAM 2 + OneFormer/YOLO26-Seg
-   - 1 VLM Trọng Tài: Gemini 3.8 Flash (Spatial Grounding + Guideline Context - Slide 21, 22)
-3. Tầng 3: Hàng đợi Review Xếp Hạng Từ Cao Xuống Thấp (Sorted Severity Queue & Recall@20% >= 70% - Slide 34)
-4. Tầng 4: Honeypot & Gold Standard Quality Tracker (Slide 33)
-5. 1-Click Auto-Heal & Export JSON/CSV/Feedback Report
+BDD100K 2D quality-control engine.
+Deterministic rules are active; legacy simulated model proposals are disabled by
+default. Human review and independent gold labels are required before reporting
+model-error or annotator-quality metrics.
 """
 
 import math
@@ -23,7 +17,7 @@ except ImportError:
     SHAPELY_AVAILABLE = False
 
 from ai_engine.guideline_manager import global_guideline_manager
-from ai_engine.models_ensemble import global_multi_model_engine, compute_iou
+from ai_engine.models_ensemble import global_multi_model_engine, MultiModelQCEngine, compute_iou
 from coordinate_utils import to_xyxy, coco_to_xyxy, yolo_to_xyxy, voc_to_xyxy, bdd_to_xyxy, xyxy_to_bdd
 
 DEFAULT_CONFIG = {
@@ -45,21 +39,21 @@ DEFAULT_CONFIG = {
 class BDDQualityChecker:
     """Bộ kiểm tra chất lượng BDD100K tích hợp Hội đồng Đa Mô hình & Phân luồng Review 4 Tầng."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, guideline_manager=None):
         self.cfg = DEFAULT_CONFIG.copy()
         if config:
             self.cfg.update(config)
-        self.guideline_manager = global_guideline_manager
-        self.ai_engine = global_multi_model_engine
+        self.guideline_manager = guideline_manager or global_guideline_manager
+        self.ai_engine = global_multi_model_engine if guideline_manager is None else MultiModelQCEngine(self.guideline_manager)
 
     def check_dataset_advanced(self, data: Any) -> Dict[str, Any]:
         """
         Phương thức kiểm tra toàn diện tích hợp Hội Đồng 5 Mô Hình & 4 Tầng QA.
         Trả về:
-        - Tóm tắt KPI (Workload reduction, Defect rate, 4 QA Layers breakdown)
+        - Số frame bị gắn cờ bởi luật hiện tại và breakdown theo rule
         - Danh sách Frame đã được SẮP XẾP TỪ CAO XUỐNG THẤP
         - Cột giải thích chi tiết lỗi, tên model và trích dẫn điều khoản guideline.
-        - Benchmark Recall@20% so với 2 Baseline (Slide 34)
+        - Recall@20 chỉ có thể đo sau khi có frame-level gold độc lập
         """
         if isinstance(data, list):
             frames = data
@@ -96,7 +90,7 @@ class BDDQualityChecker:
             t = err.get("error_type", "GENERAL")
             summary["error_counts_by_type"][t] = summary["error_counts_by_type"].get(t, 0) + 1
 
-        summary["estimated_review_rounds_saved"] = max(1, math.ceil(summary["auto_pass_count"] / 10))
+        summary["estimated_review_rounds_saved"] = None
 
         return all_errors, summary, enriched_frames
 

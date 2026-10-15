@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "frames": 50,
+  "provider": "EoMT-DINOv3 Panoptic Segmentation (Mask)",
+  "model_candidates": 198,
+  "candidate_frames": 50,
+  "elapsed_seconds": 35.7,
+  "guideline_version": 1,
+  "macro_iou_mean": 0.46075,
+  "class_comparisons": 475,
+  "frames_with_prediction_overlay": 50,
+  "issues_with_position": 198
+}

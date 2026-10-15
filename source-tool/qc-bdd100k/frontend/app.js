@@ -360,17 +360,17 @@ function applyQCResults(res) {
 
   // Render KPIs
   dom.kpiTotalFrames.textContent = `${state.summary.total_frames} frames (${state.summary.total_objects} objs)`;
-  dom.kpiAutoPass.textContent = `${state.summary.workload_reduction_pct}%`;
-  dom.kpiAutoPassSub.textContent = `${state.summary.auto_pass_count} frames Pass`;
+  dom.kpiAutoPass.textContent = `${state.summary.no_rule_findings_pct ?? "—"}%`;
+  dom.kpiAutoPassSub.textContent = `${state.summary.auto_pass_count} frames without rule flags`;
   dom.kpiNeedReview.textContent = `${state.summary.need_review_count} frames`;
-  dom.kpiDefectRate.textContent = `${state.summary.defect_rate_pct}% lỗi`;
+  dom.kpiDefectRate.textContent = `${state.summary.rule_flagged_frame_pct ?? "—"}% rule-flagged`;
   dom.kpiJobVerdict.textContent = state.summary.job_verdict;
-  dom.kpiJobVerdict.className = `kpi-value ${state.summary.defect_rate_pct > 10 ? 'text-red' : 'text-green'}`;
+  dom.kpiJobVerdict.className = `kpi-value ${state.summary.job_verdict === "REVIEW_REQUIRED" ? 'text-red' : 'text-muted'}`;
 
   // Render Meter
-  dom.reductionBarFill.style.width = `${state.summary.workload_reduction_pct}%`;
-  dom.meterPassPct.textContent = `${state.summary.workload_reduction_pct}%`;
-  dom.meterReviewPct.textContent = `${state.summary.defect_rate_pct}%`;
+  dom.reductionBarFill.style.width = `${state.summary.no_rule_findings_pct || 0}%`;
+  dom.meterPassPct.textContent = `${state.summary.no_rule_findings_pct ?? "—"}% no rule flags`;
+  dom.meterReviewPct.textContent = `${state.summary.rule_flagged_frame_pct ?? "—"}% rule-flagged`;
 
   // Render Tabs
   renderPriorityTable();
@@ -416,7 +416,8 @@ function renderPriorityTable() {
 
     // Cột 2: Frame Name
     const tdName = document.createElement('td');
-    tdName.innerHTML = `<strong>${frame.frame_name}</strong><br><small style="color: var(--text-dim);">${frame.labels ? frame.labels.length : 0} objects · Score: ${frame.consensus_score}%</small>`;
+    const scoreText = Number.isFinite(frame.consensus_score) ? `Model consensus: ${frame.consensus_score}%` : "Rules only · no model consensus";
+    tdName.innerHTML = `<strong>${frame.frame_name}</strong><br><small style="color: var(--text-dim);">${frame.labels ? frame.labels.length : 0} objects · ${scoreText}</small>`;
 
     // Cột 3: Khuyến nghị
     const tdRec = document.createElement('td');
@@ -844,13 +845,13 @@ function renderAnalytics() {
   // 3. Benchmark Hàng Đợi Ưu Tiên vs Baseline (Slide 34)
   const bench = state.summary.benchmark || {};
   if (dom.benchPrioritizedRecall) {
-    dom.benchPrioritizedRecall.textContent = `${bench.prioritized_recall_at_20 !== undefined ? bench.prioritized_recall_at_20 : 75.0}%`;
+    dom.benchPrioritizedRecall.textContent = Number.isFinite(bench.prioritized_recall_at_20) ? `${bench.prioritized_recall_at_20}%` : "N/A";
   }
   if (dom.benchRandomRecall) {
-    dom.benchRandomRecall.textContent = `${bench.random_baseline_recall_at_20 !== undefined ? bench.random_baseline_recall_at_20 : 20.0}%`;
+    dom.benchRandomRecall.textContent = Number.isFinite(bench.random_baseline_recall_at_20) ? `${bench.random_baseline_recall_at_20}%` : "N/A";
   }
   if (dom.benchBoxcountRecall) {
-    dom.benchBoxcountRecall.textContent = `${bench.box_count_baseline_recall_at_20 !== undefined ? bench.box_count_baseline_recall_at_20 : 35.0}%`;
+    dom.benchBoxcountRecall.textContent = Number.isFinite(bench.box_count_baseline_recall_at_20) ? `${bench.box_count_baseline_recall_at_20}%` : "N/A";
   }
 }
 

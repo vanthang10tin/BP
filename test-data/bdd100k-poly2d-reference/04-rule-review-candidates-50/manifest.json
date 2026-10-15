@@ -1,0 +1,904 @@
+{
+  "dataset": "BDD100K detection validation split",
+  "source_labels": "archive/bdd100k_labels_release/bdd100k/labels/bdd100k_labels_images_val.json",
+  "source_images": "archive/bdd100k/bdd100k/images/100k/val",
+  "selection": "Deterministic first matching frames in the first 1200 source entries; packs are disjoint.",
+  "selection_rule": "findings",
+  "frames": 50,
+  "objects_or_regions": 1699,
+  "box2d_labels": 1223,
+  "poly2d_shapes": 476,
+  "frames_with_current_rule_candidate_findings": 50,
+  "annotation_sha256": "96f37dfd438728857251a246acafb7bfff342cbeef0addd3a1be184cf0a012e4",
+  "annotations_file": "annotations.json",
+  "images_directory": "images/",
+  "images": [
+    {
+      "name": "b21742c2-18d3463a.jpg",
+      "source_index": 152,
+      "sha256": "ea39b772784c9e3f4fd9a91012304719fb4cb992b11502872290f4c4f7bb3767",
+      "labels": 41,
+      "box2d_labels": 28,
+      "poly2d_labels": 13,
+      "poly2d_shapes": 13,
+      "categories": {
+        "bike": 5,
+        "car": 6,
+        "drivable area": 3,
+        "lane": 10,
+        "person": 13,
+        "traffic light": 1,
+        "traffic sign": 2,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b2194b15-1825056a.jpg",
+      "source_index": 153,
+      "sha256": "33b5c6d2f79f57630c433cdef3d47fbdb02caa5d1c34e1ca8f2dc39e49a63c59",
+      "labels": 27,
+      "box2d_labels": 19,
+      "poly2d_labels": 8,
+      "poly2d_shapes": 8,
+      "categories": {
+        "car": 6,
+        "lane": 8,
+        "person": 2,
+        "traffic light": 7,
+        "traffic sign": 4
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b21bfb83-ea32f716.jpg",
+      "source_index": 155,
+      "sha256": "1fd5c10980d341a3fd9fc00474b79541cba740b233f4289ab77dfb3d885decbd",
+      "labels": 53,
+      "box2d_labels": 44,
+      "poly2d_labels": 9,
+      "poly2d_shapes": 9,
+      "categories": {
+        "car": 16,
+        "lane": 9,
+        "person": 4,
+        "traffic light": 16,
+        "traffic sign": 8
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b21c86ac-71205084.jpg",
+      "source_index": 159,
+      "sha256": "111a3a654c319db5ad8b9b1e2cb8aa1dbbffcef6874878648c759eb641652474",
+      "labels": 17,
+      "box2d_labels": 15,
+      "poly2d_labels": 2,
+      "poly2d_shapes": 2,
+      "categories": {
+        "bus": 2,
+        "car": 6,
+        "drivable area": 1,
+        "lane": 1,
+        "traffic light": 5,
+        "traffic sign": 2
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b229488e-e4714bb7.jpg",
+      "source_index": 163,
+      "sha256": "3c18b395997fa18398f5a0d0ea1acd5f02329fdc23ae1ca8a947c6caac140a90",
+      "labels": 25,
+      "box2d_labels": 18,
+      "poly2d_labels": 7,
+      "poly2d_shapes": 7,
+      "categories": {
+        "car": 9,
+        "drivable area": 2,
+        "lane": 5,
+        "traffic sign": 9
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b22f174d-a19c875e.jpg",
+      "source_index": 167,
+      "sha256": "3eb394ca1ee969a5b39306af7d44a3b7abf871f90944c0e6c29aba6f75365cc9",
+      "labels": 22,
+      "box2d_labels": 20,
+      "poly2d_labels": 2,
+      "poly2d_shapes": 2,
+      "categories": {
+        "bike": 1,
+        "car": 9,
+        "drivable area": 1,
+        "lane": 1,
+        "person": 1,
+        "traffic light": 3,
+        "traffic sign": 6
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b22f385b-5d7e5202.jpg",
+      "source_index": 168,
+      "sha256": "7348fa65d7c42d309027da96090509739fc10153cab21574ee9dd7ec6c065910",
+      "labels": 29,
+      "box2d_labels": 24,
+      "poly2d_labels": 5,
+      "poly2d_shapes": 5,
+      "categories": {
+        "car": 8,
+        "drivable area": 1,
+        "lane": 4,
+        "person": 1,
+        "traffic light": 9,
+        "traffic sign": 6
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b2331b83-a28e6b57.jpg",
+      "source_index": 174,
+      "sha256": "43b86a4b436ea283a678a138f3328049e9a7ae19aec4db8d43b5f5423a842800",
+      "labels": 47,
+      "box2d_labels": 25,
+      "poly2d_labels": 22,
+      "poly2d_shapes": 22,
+      "categories": {
+        "bus": 2,
+        "car": 9,
+        "drivable area": 3,
+        "lane": 19,
+        "person": 2,
+        "traffic light": 8,
+        "traffic sign": 3,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b237db93-fab44bf2.jpg",
+      "source_index": 176,
+      "sha256": "4e6dc21042dfb485d14816180db5b8d66d90261117a54746bf3a90f69e225ee0",
+      "labels": 32,
+      "box2d_labels": 23,
+      "poly2d_labels": 9,
+      "poly2d_shapes": 9,
+      "categories": {
+        "car": 9,
+        "drivable area": 3,
+        "lane": 6,
+        "traffic sign": 14
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b23adb0d-8a7aaced.jpg",
+      "source_index": 180,
+      "sha256": "75fd331ad8c7b35c4bbfe3c87f7bebf83524dd85ea75414373bf4b3f360f00cd",
+      "labels": 50,
+      "box2d_labels": 35,
+      "poly2d_labels": 15,
+      "poly2d_shapes": 15,
+      "categories": {
+        "car": 18,
+        "drivable area": 1,
+        "lane": 14,
+        "person": 1,
+        "traffic light": 12,
+        "traffic sign": 4
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b23b2649-8349d2a1.jpg",
+      "source_index": 183,
+      "sha256": "3e9e6af99d253180321be4f482a848fcd1a7d93372c0d01e889c3af0e9af4707",
+      "labels": 33,
+      "box2d_labels": 26,
+      "poly2d_labels": 7,
+      "poly2d_shapes": 7,
+      "categories": {
+        "car": 18,
+        "drivable area": 1,
+        "lane": 6,
+        "person": 1,
+        "traffic light": 5,
+        "traffic sign": 1,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b23d2079-0c019d8e.jpg",
+      "source_index": 187,
+      "sha256": "bca175fdc4f5a62e7b1148331da4e6ecbbb717d8d3a7fb85f06a76812e75006d",
+      "labels": 52,
+      "box2d_labels": 33,
+      "poly2d_labels": 19,
+      "poly2d_shapes": 19,
+      "categories": {
+        "bus": 1,
+        "car": 16,
+        "drivable area": 4,
+        "lane": 15,
+        "traffic light": 12,
+        "traffic sign": 4
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b242f6b2-f5da110f.jpg",
+      "source_index": 197,
+      "sha256": "0643ae70e80e9e8428fece214c06e9c8c2cb2d5d34de9fe8c86b841326e4d24e",
+      "labels": 62,
+      "box2d_labels": 41,
+      "poly2d_labels": 21,
+      "poly2d_shapes": 21,
+      "categories": {
+        "car": 6,
+        "drivable area": 2,
+        "lane": 19,
+        "person": 6,
+        "traffic light": 19,
+        "traffic sign": 10
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b24702e3-fe617f57.jpg",
+      "source_index": 213,
+      "sha256": "f4cedcd17a97296e4ea5f55abc6bf67562f945aaaea76ade255a581a9e8530ec",
+      "labels": 48,
+      "box2d_labels": 33,
+      "poly2d_labels": 15,
+      "poly2d_shapes": 15,
+      "categories": {
+        "bus": 1,
+        "car": 15,
+        "drivable area": 1,
+        "lane": 14,
+        "traffic light": 9,
+        "traffic sign": 6,
+        "truck": 2
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b24bdca1-e4f0c558.jpg",
+      "source_index": 219,
+      "sha256": "90c68d626d3d77b142edc412f09829d027deabbd559620df78c015297e2bc1fa",
+      "labels": 32,
+      "box2d_labels": 23,
+      "poly2d_labels": 9,
+      "poly2d_shapes": 9,
+      "categories": {
+        "car": 14,
+        "drivable area": 3,
+        "lane": 6,
+        "traffic light": 2,
+        "traffic sign": 6,
+        "train": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b251064f-30002542.jpg",
+      "source_index": 231,
+      "sha256": "b24131c68a94fec7531707de90775671651eab33de0e00a7ad3b1acc971eeeff",
+      "labels": 23,
+      "box2d_labels": 10,
+      "poly2d_labels": 13,
+      "poly2d_shapes": 13,
+      "categories": {
+        "car": 8,
+        "drivable area": 3,
+        "lane": 10,
+        "traffic sign": 2
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b251064f-8d92db81.jpg",
+      "source_index": 234,
+      "sha256": "eb63eb2ef7202f3e10d4fa259345d9cd6635a0931a647fe495fec9c5d895fae7",
+      "labels": 78,
+      "box2d_labels": 52,
+      "poly2d_labels": 26,
+      "poly2d_shapes": 26,
+      "categories": {
+        "bus": 2,
+        "car": 22,
+        "drivable area": 2,
+        "lane": 24,
+        "person": 10,
+        "traffic light": 6,
+        "traffic sign": 12
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b251064f-e7a165fd.jpg",
+      "source_index": 235,
+      "sha256": "95e8497439989ae56bd9f9d366c5cad4ab45ed34a21b6fb35b6dd545a3a7ab7b",
+      "labels": 61,
+      "box2d_labels": 49,
+      "poly2d_labels": 12,
+      "poly2d_shapes": 12,
+      "categories": {
+        "car": 30,
+        "drivable area": 3,
+        "lane": 9,
+        "person": 5,
+        "traffic light": 10,
+        "traffic sign": 4
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b255cd6c-2f889586.jpg",
+      "source_index": 238,
+      "sha256": "8250c873487d49ead0f484a15fb837f5ee52a5eaa71f9d298a078b2388379a2a",
+      "labels": 50,
+      "box2d_labels": 42,
+      "poly2d_labels": 8,
+      "poly2d_shapes": 8,
+      "categories": {
+        "bus": 2,
+        "car": 5,
+        "lane": 8,
+        "traffic light": 10,
+        "traffic sign": 24,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b255cd6c-6502a28c.jpg",
+      "source_index": 240,
+      "sha256": "e71eebeb4220cb7a782294fa6f127902584c1100f471a3d97f9922c602c6b32d",
+      "labels": 32,
+      "box2d_labels": 21,
+      "poly2d_labels": 11,
+      "poly2d_shapes": 11,
+      "categories": {
+        "car": 11,
+        "drivable area": 3,
+        "lane": 8,
+        "person": 2,
+        "traffic light": 6,
+        "traffic sign": 1,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b255cd6c-bc3cbb18.jpg",
+      "source_index": 242,
+      "sha256": "d43067ea2dd15327d1ea508931b633e8ee500bde0a83f5d4ae570e82c8b998cf",
+      "labels": 36,
+      "box2d_labels": 22,
+      "poly2d_labels": 14,
+      "poly2d_shapes": 14,
+      "categories": {
+        "bus": 1,
+        "car": 10,
+        "drivable area": 5,
+        "lane": 9,
+        "traffic sign": 11
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b255cd6c-e5f99451.jpg",
+      "source_index": 243,
+      "sha256": "3090edab52c55f1379237f36217cc0ebfaaa4bd0857650f887ce3d6a91cbcc06",
+      "labels": 14,
+      "box2d_labels": 14,
+      "poly2d_labels": 0,
+      "poly2d_shapes": 0,
+      "categories": {
+        "car": 7,
+        "traffic sign": 7
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b255cd6c-f2f28aff.jpg",
+      "source_index": 244,
+      "sha256": "6a1d6cf68523fd58c1aae6613fc8ea9de86fc25169978aa328fdcd77a04d19a5",
+      "labels": 39,
+      "box2d_labels": 36,
+      "poly2d_labels": 3,
+      "poly2d_shapes": 3,
+      "categories": {
+        "car": 10,
+        "drivable area": 1,
+        "lane": 2,
+        "person": 16,
+        "traffic light": 4,
+        "traffic sign": 6
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b255cd6c-fb594dcb.jpg",
+      "source_index": 245,
+      "sha256": "19ef2aca07c12936021ada04f2f047e27fd4acc9f2c880ae8bcd300c013daf2e",
+      "labels": 37,
+      "box2d_labels": 24,
+      "poly2d_labels": 13,
+      "poly2d_shapes": 13,
+      "categories": {
+        "car": 7,
+        "drivable area": 3,
+        "lane": 10,
+        "traffic light": 13,
+        "traffic sign": 3,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b2576c8c-2924c365.jpg",
+      "source_index": 246,
+      "sha256": "edbab6e95cd8cefeb0ffe3cbce1ae338fa5849e77e7a1961e92c773945dbc2f3",
+      "labels": 41,
+      "box2d_labels": 32,
+      "poly2d_labels": 9,
+      "poly2d_shapes": 9,
+      "categories": {
+        "car": 17,
+        "drivable area": 1,
+        "lane": 8,
+        "person": 10,
+        "traffic sign": 5
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b258d359-db99eff1.jpg",
+      "source_index": 251,
+      "sha256": "b313ca2e188472516d1257bd1fddd933aa1d8b7dfcd5e15ec1698d93a47c97e7",
+      "labels": 14,
+      "box2d_labels": 9,
+      "poly2d_labels": 5,
+      "poly2d_shapes": 5,
+      "categories": {
+        "bus": 1,
+        "car": 4,
+        "drivable area": 1,
+        "lane": 4,
+        "traffic light": 3,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b25ae6c0-311e72c2.jpg",
+      "source_index": 254,
+      "sha256": "085267b0c6efdb2c6bb0cba9f5d57b6fbff4cbaaa82169aaf4dbfdd35a0c7086",
+      "labels": 40,
+      "box2d_labels": 33,
+      "poly2d_labels": 7,
+      "poly2d_shapes": 7,
+      "categories": {
+        "car": 12,
+        "drivable area": 1,
+        "lane": 6,
+        "person": 6,
+        "traffic light": 8,
+        "traffic sign": 4,
+        "truck": 3
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b25ae6c0-fb9fea6a.jpg",
+      "source_index": 255,
+      "sha256": "4af7f5843c417091a1ab5c551cd80242b285e62c2cf8a8a497c7dc56d2944b6b",
+      "labels": 15,
+      "box2d_labels": 12,
+      "poly2d_labels": 3,
+      "poly2d_shapes": 3,
+      "categories": {
+        "car": 5,
+        "lane": 3,
+        "traffic sign": 7
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b25fb716-78d8d49b.jpg",
+      "source_index": 258,
+      "sha256": "043cc17b9f44c91400ef1b36d8f546f07f73f5ca6c935bb1aeddb820d9a7f580",
+      "labels": 37,
+      "box2d_labels": 25,
+      "poly2d_labels": 12,
+      "poly2d_shapes": 12,
+      "categories": {
+        "car": 12,
+        "drivable area": 3,
+        "lane": 9,
+        "person": 1,
+        "traffic light": 4,
+        "traffic sign": 6,
+        "truck": 2
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b26331b9-102f5d9a.jpg",
+      "source_index": 265,
+      "sha256": "40b82cafc941ac62f2cbf6147df1b1b54453329c34dad950a2cded1855618a2a",
+      "labels": 29,
+      "box2d_labels": 18,
+      "poly2d_labels": 11,
+      "poly2d_shapes": 11,
+      "categories": {
+        "car": 9,
+        "drivable area": 2,
+        "lane": 9,
+        "traffic sign": 6,
+        "truck": 3
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b26610ce-083c3bd1.jpg",
+      "source_index": 270,
+      "sha256": "afa8c2ac2a7f0dbeab9b7864fd8c4bcf142a7a6d88a2fdafb100abaa12eb4de5",
+      "labels": 31,
+      "box2d_labels": 20,
+      "poly2d_labels": 11,
+      "poly2d_shapes": 11,
+      "categories": {
+        "car": 14,
+        "drivable area": 2,
+        "lane": 9,
+        "motor": 1,
+        "traffic light": 1,
+        "traffic sign": 4
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b266429a-83757042.jpg",
+      "source_index": 271,
+      "sha256": "7c65db36dda8f1c1e4c420fc05474a15ab02f05506cb9b5f0c93d2b20cad04d8",
+      "labels": 16,
+      "box2d_labels": 12,
+      "poly2d_labels": 4,
+      "poly2d_shapes": 4,
+      "categories": {
+        "car": 7,
+        "lane": 4,
+        "traffic light": 3,
+        "traffic sign": 2
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b266db29-403143cc.jpg",
+      "source_index": 275,
+      "sha256": "268280fca6692f31aaa623d8af07d93317e376927772d02f7f6c8e8073756667",
+      "labels": 30,
+      "box2d_labels": 17,
+      "poly2d_labels": 13,
+      "poly2d_shapes": 13,
+      "categories": {
+        "car": 5,
+        "drivable area": 1,
+        "lane": 12,
+        "person": 8,
+        "traffic light": 2,
+        "traffic sign": 1,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b266db29-da0abce7.jpg",
+      "source_index": 278,
+      "sha256": "e3790915bbe242d951a6f31e9dab8f16748dc64f0bf1087b14b9518aecbbf1e9",
+      "labels": 35,
+      "box2d_labels": 28,
+      "poly2d_labels": 7,
+      "poly2d_shapes": 7,
+      "categories": {
+        "car": 21,
+        "drivable area": 2,
+        "lane": 5,
+        "traffic light": 2,
+        "traffic sign": 5
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b26ba07a-da78f324.jpg",
+      "source_index": 289,
+      "sha256": "2eab8c4af616e7ea62718602abe712db73c517e35c58d45410b04f4d6b81ea8a",
+      "labels": 25,
+      "box2d_labels": 13,
+      "poly2d_labels": 12,
+      "poly2d_shapes": 12,
+      "categories": {
+        "car": 5,
+        "drivable area": 4,
+        "lane": 8,
+        "traffic sign": 8
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b26cfcdc-7b00747d.jpg",
+      "source_index": 294,
+      "sha256": "60f36f9a11c0d8854543e257b22305efe13c049b8c66351df47e369557924837",
+      "labels": 31,
+      "box2d_labels": 25,
+      "poly2d_labels": 6,
+      "poly2d_shapes": 6,
+      "categories": {
+        "car": 12,
+        "drivable area": 2,
+        "lane": 4,
+        "person": 1,
+        "traffic light": 5,
+        "traffic sign": 4,
+        "truck": 3
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b26dd913-2888cbfd.jpg",
+      "source_index": 296,
+      "sha256": "766151e6aefa194fa822f7655be16e69e6d863e2cab7d3c280ce268bf5f8aac1",
+      "labels": 35,
+      "box2d_labels": 27,
+      "poly2d_labels": 8,
+      "poly2d_shapes": 8,
+      "categories": {
+        "car": 15,
+        "drivable area": 1,
+        "lane": 7,
+        "person": 3,
+        "traffic light": 5,
+        "traffic sign": 4
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b26dddb5-28e4a05f.jpg",
+      "source_index": 297,
+      "sha256": "d84d5e4c5af7990186ef0c44b2c243dd9e9f2428ee9bfdbfe67a50054cd2b266",
+      "labels": 14,
+      "box2d_labels": 12,
+      "poly2d_labels": 2,
+      "poly2d_shapes": 2,
+      "categories": {
+        "bus": 2,
+        "car": 5,
+        "drivable area": 1,
+        "lane": 1,
+        "person": 1,
+        "traffic light": 3,
+        "traffic sign": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b26f8762-61cfb033.jpg",
+      "source_index": 299,
+      "sha256": "0c2599432445aa725c848e2ff789c35749321ec9554a4ad5c4801f4e93fb0944",
+      "labels": 34,
+      "box2d_labels": 25,
+      "poly2d_labels": 9,
+      "poly2d_shapes": 9,
+      "categories": {
+        "car": 23,
+        "lane": 9,
+        "person": 1,
+        "traffic sign": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b270d8e4-0f565398.jpg",
+      "source_index": 306,
+      "sha256": "7292f0d0ac39ab620b07abe1f06933c7f8ab331b95be938179df59f14c8c06db",
+      "labels": 48,
+      "box2d_labels": 27,
+      "poly2d_labels": 21,
+      "poly2d_shapes": 21,
+      "categories": {
+        "bus": 1,
+        "car": 11,
+        "drivable area": 5,
+        "lane": 16,
+        "person": 3,
+        "traffic light": 8,
+        "traffic sign": 3,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b2743b5d-e2d585be.jpg",
+      "source_index": 314,
+      "sha256": "90bb4b7d0a643a1b47a7dc30c3a67c4b32dd84db92bda7b1fe5d20fea253b736",
+      "labels": 30,
+      "box2d_labels": 26,
+      "poly2d_labels": 4,
+      "poly2d_shapes": 4,
+      "categories": {
+        "car": 20,
+        "drivable area": 1,
+        "lane": 3,
+        "motor": 2,
+        "rider": 2,
+        "traffic sign": 2
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b27688b6-cd521517.jpg",
+      "source_index": 318,
+      "sha256": "a0a6e28f3f7f95a014e72ee694aadc6152121d8ec5e8cef6ac354679dbd0fbea",
+      "labels": 24,
+      "box2d_labels": 18,
+      "poly2d_labels": 6,
+      "poly2d_shapes": 6,
+      "categories": {
+        "bus": 1,
+        "car": 17,
+        "drivable area": 1,
+        "lane": 5
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b279bc06-3c8aeb90.jpg",
+      "source_index": 325,
+      "sha256": "ac7b400832011a7663b77129a78494b3d1b0776b4c67b4fd881ac1b065708c03",
+      "labels": 27,
+      "box2d_labels": 22,
+      "poly2d_labels": 5,
+      "poly2d_shapes": 5,
+      "categories": {
+        "car": 8,
+        "drivable area": 2,
+        "lane": 3,
+        "person": 7,
+        "traffic light": 4,
+        "traffic sign": 3
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b279bc06-4fa57251.jpg",
+      "source_index": 326,
+      "sha256": "df39333c36a69d266208be1112fd9e6b75d5f12639de9dac5d26cbb9f1fa2e28",
+      "labels": 15,
+      "box2d_labels": 10,
+      "poly2d_labels": 5,
+      "poly2d_shapes": 5,
+      "categories": {
+        "car": 3,
+        "lane": 5,
+        "traffic sign": 6,
+        "truck": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b27cd403-f2d087cc.jpg",
+      "source_index": 330,
+      "sha256": "78c08589d3b15914f90cb78412a8ad85e786899f89daa2d974a304fff86c84ae",
+      "labels": 26,
+      "box2d_labels": 23,
+      "poly2d_labels": 3,
+      "poly2d_shapes": 3,
+      "categories": {
+        "car": 22,
+        "drivable area": 1,
+        "lane": 2,
+        "traffic light": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b27d5dcb-856c0b43.jpg",
+      "source_index": 333,
+      "sha256": "e8d0d6fae6908d1f7e7a8065e0527820e4b99ac894c3219a2b00fd1985761f7b",
+      "labels": 13,
+      "box2d_labels": 9,
+      "poly2d_labels": 4,
+      "poly2d_shapes": 4,
+      "categories": {
+        "car": 8,
+        "drivable area": 1,
+        "lane": 3,
+        "traffic sign": 1
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b28aac6c-9f1b99cb.jpg",
+      "source_index": 348,
+      "sha256": "5d1896c751b28e1a788cadc55578736cee495760aae91acca26a9846ff8bf7d4",
+      "labels": 40,
+      "box2d_labels": 27,
+      "poly2d_labels": 13,
+      "poly2d_shapes": 13,
+      "categories": {
+        "car": 22,
+        "drivable area": 1,
+        "lane": 12,
+        "traffic light": 3,
+        "traffic sign": 2
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b28cfc9b-224431ab.jpg",
+      "source_index": 353,
+      "sha256": "f836ab73576e6f4ad8b69271d09da2a7abd3c13da7a314023c8b75a19e0850e7",
+      "labels": 39,
+      "box2d_labels": 28,
+      "poly2d_labels": 11,
+      "poly2d_shapes": 11,
+      "categories": {
+        "car": 15,
+        "drivable area": 1,
+        "lane": 10,
+        "person": 1,
+        "traffic light": 2,
+        "traffic sign": 10
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b29026f0-d5a5ee8c.jpg",
+      "source_index": 360,
+      "sha256": "1147099fb41c3e666200abd59f2995a6fa8386837b9bf9e49e75b9b43985d36f",
+      "labels": 30,
+      "box2d_labels": 21,
+      "poly2d_labels": 9,
+      "poly2d_shapes": 9,
+      "categories": {
+        "car": 6,
+        "drivable area": 2,
+        "lane": 7,
+        "motor": 1,
+        "person": 1,
+        "rider": 1,
+        "traffic light": 6,
+        "traffic sign": 6
+      },
+      "current_rule_candidate_findings": true
+    },
+    {
+      "name": "b2932832-df9384eb.jpg",
+      "source_index": 366,
+      "sha256": "2f4d245599779afe8c200b409a9f630254d37d34f25cad52871901aa8dc97641",
+      "labels": 40,
+      "box2d_labels": 27,
+      "poly2d_labels": 13,
+      "poly2d_shapes": 13,
+      "categories": {
+        "car": 14,
+        "drivable area": 1,
+        "lane": 12,
+        "person": 3,
+        "traffic light": 6,
+        "traffic sign": 4
+      },
+      "current_rule_candidate_findings": true
+    }
+  ],
+  "integrity_note": "Each annotation entry is copied verbatim from the original validation JSON; no labels are added, altered, or removed.",
+  "finding_note": "Rule findings are unconfirmed review candidates, not ground-truth defects or model accuracy evidence.",
+  "license_note": "Use subject to the upstream BDD100K dataset terms. The toolkit BSD license does not itself license dataset media/annotations."
+}

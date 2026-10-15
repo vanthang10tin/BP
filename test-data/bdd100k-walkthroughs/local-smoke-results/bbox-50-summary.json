@@ -1,0 +1,10 @@
+{
+  "status": "success",
+  "frames": 50,
+  "provider": "YOLOv8-Detect Object Detection (Bounding Box)",
+  "model_candidates": 568,
+  "model_predictions": 238,
+  "model_skips": 0,
+  "elapsed_seconds": "see initial run log",
+  "guideline_version": 1
+}

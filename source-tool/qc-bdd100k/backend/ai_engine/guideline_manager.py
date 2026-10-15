@@ -9,7 +9,7 @@ import os
 import re
 from typing import Dict, List, Any, Optional
 
-DEFAULT_GUIDELINES = """# QUY CHUẨN GÁN NHÃN BDD100K 2D & SỔ QUYẾT ĐỊNH ĐỘI P-037
+DEFAULT_GUIDELINES = """# TEMPLATE ONLY — BDD100K 2D guideline; not an approved project policy
 
 ## 1. QUY CHUẨN HÌNH HỌC & ĐỘ KHÍT (BDD100K BBOX & SEGMENTATION)
 §1.1. Bounding Box phải ôm sát các điểm cực biên ngoài cùng của vật thể (Tightness >= 80%). Không vẽ thừa nền đường quá 20% và không cắt cụt các phần thân xe, bánh xe, gương xe.
@@ -24,18 +24,15 @@ DEFAULT_GUIDELINES = """# QUY CHUẨN GÁN NHÃN BDD100K 2D & SỔ QUYẾT ĐỊ
 §2.3. Bắt buộc điền đầy đủ 2 thuộc tính: 'occluded' (bị che khuất) và 'truncated' (bị cắt ở mép ảnh).
 §2.4. Không gán nhãn các hình ảnh phản chiếu trên gương/kính hoặc hình vẽ quảng cáo xe trên thân xe buýt/tường nhà.
 
-## 3. SỔ QUYẾT ĐỊNH ĐỘI P-037 (CÁC QUYẾT ĐỊNH ĐÃ BAN HÀNH)
-[QĐ-001] Người ngồi sau xe máy có box 'pedestrian/rider' riêng: Mỗi người trên xe máy, kể cả người ngồi sau chỉ lộ đầu, bắt buộc phải có một box riêng biệt, không được gộp chung một box với xe.
-[QĐ-002] Quy tắc nghiệm thu & trả job: Reviewer kiểm tra toàn bộ hoặc lấy mẫu. Nếu tỷ lệ ảnh sai > 10% thì TRẢ NGUYÊN JOB về cho Annotator sửa lại.
-[QĐ-003] Quy tắc vật thể che khuất: Vật thể bị che khuất hơn 50%, box chỉ ôm phần nhìn thấy thực tế, không vẽ ước lượng phồng ra ngoài khoảng không.
-[QĐ-004] Tính nhất quán: Số lượng box và vị trí các vật thể tĩnh phải đồng nhất qua các frame liên tiếp, không nhảy giật cục.
+## 3. Project-specific policy
+No project-specific acceptance thresholds are configured in this template. Upload and approve the applicable project guideline before using policy-dependent checks.
 """
 
 class GuidelineManager:
     """Quản lý các quy chuẩn gán nhãn và trích xuất điều khoản phục vụ VLM / Rule audit."""
 
     def __init__(self, custom_text: Optional[str] = None):
-        self.raw_text = custom_text if custom_text else DEFAULT_GUIDELINES
+        self.raw_text = custom_text if custom_text is not None else DEFAULT_GUIDELINES
         self.rules: List[Dict[str, str]] = []
         self._parse_rules()
 
@@ -114,7 +111,7 @@ class GuidelineManager:
         if clauses:
             top_clause = clauses[0]
             return f"{top_clause['id']}: {top_clause['content'][:85]}..."
-        return "Quy chuẩn chất lượng BDD100K & Đội P-037"
+        return "No matching clause in the active workspace guideline; human review required."
 
 # Instance mặc định dùng chung
 global_guideline_manager = GuidelineManager()

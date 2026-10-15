@@ -6,11 +6,8 @@ QC Tự Động Cho Bounding Box & Segmentation 2D (BDD100K)
 Tác giả: Nhóm P-037
 Tuân thủ toàn diện chương trình VinUniversity (Slides 19, 21, 22, 29, 30, 31, 33, 34, 37, 46)
 
-4 TẦNG KIỂM SOÁT CHẤT LƯỢNG (QA LAYERS - Slide 29):
-1. Tầng 1: QC theo luật (cấu trúc, hình học, ontology 10 classes BDD100k, aspect ratio, polygon self-intersection)
-2. Tầng 2: Lỗi nghi ngờ từ Model (ObjectLab/Cleanlab: Badly located, Swapped class, Overlooked)
-3. Tầng 3: Review có ưu tiên (Hàng đợi xếp từ Cao xuống Thấp, Recall@20% >= 70%)
-4. Tầng 4: Honeypot & Gold Standard Benchmark
+Hiện tại: QC theo luật và xếp hàng review; model provider thật chưa được nối.
+Recall@20 và honeypot chỉ có ý nghĩa sau khi có gold set độc lập, đã adjudicate.
 """
 
 import os
@@ -44,10 +41,10 @@ def print_summary(summary: Dict[str, Any], sorted_frames: List[Dict[str, Any]], 
     print("=" * 75)
     print(f" Tổng số frames kiểm tra : {summary['total_frames']}")
     print(f" Tổng số đối tượng (Objs): {summary['total_objects']}")
-    print(f" Số frames đạt chuẩn 100%: {summary['auto_pass_count']} ({summary['workload_reduction_pct']}%) -> Reviewer bỏ qua!")
-    print(f" Số frames cần review lại: {summary['need_review_count']} ({summary['defect_rate_pct']}%)")
+    print(f" Frames không có rule flag: {summary['auto_pass_count']} ({summary['no_rule_findings_pct']}%) — chưa xác nhận sạch.")
+    print(f" Frames bị rule gắn cờ   : {summary['need_review_count']} ({summary['rule_flagged_frame_pct']}%)")
     print(f" Số frames CỰC CAO (Nguy cơ): {summary['critical_count']}")
-    print(f" Quyết định nghiệm thu   : {summary['job_verdict']} (Theo QĐ-002: Ngưỡng 10%)")
+    print(f" Trạng thái rule review  : {summary['job_verdict']}")
     print("-" * 75)
 
     l_stats = summary.get("layer_stats", {})
@@ -56,7 +53,7 @@ def print_summary(summary: Dict[str, Any], sorted_frames: List[Dict[str, Any]], 
     print(f"  • Tầng 2 (Model ObjectLab / Cleanlab)    : {l_stats.get('layer_2_models', 0)} lỗi phát hiện")
     print(f"  • Tầng 3 (Hàng đợi Review có ưu tiên)  : Đã xếp hạng 1 -> 4 theo mức độ nghiêm trọng")
     bench = summary.get("benchmark", {})
-    print(f"    -> Hiệu quả Review top 20% (Recall@20%): {bench.get('recall_at_20_pct', 0)}% (So với Random: {bench.get('random_recall_at_20_pct', 20)}%)")
+    print("    -> Recall@20%: N/A (cần gold set độc lập được adjudicate)")
     print("-" * 75)
 
     r_tele = summary.get("rule_telemetry", {})

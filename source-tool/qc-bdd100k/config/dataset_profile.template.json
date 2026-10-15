@@ -1,0 +1,19 @@
+{
+  "dataset": "my_dataset",
+  "task_type": "bbox",
+  "annotation_format": "coco",
+  "image_width": 1920,
+  "image_height": 1080,
+  "classes": [
+    { "name": "vehicle", "aliases": ["car", "truck"], "model_aliases": ["automobile"] },
+    { "name": "pedestrian", "aliases": ["person"], "model_aliases": ["human"] }
+  ],
+  "model_label_mapping": {
+    "car": "vehicle",
+    "truck": "vehicle",
+    "person": "pedestrian"
+  },
+  "model_threshold": 0.35,
+  "match_iou_threshold": 0.5,
+  "guideline_status": "not_configured"
+}

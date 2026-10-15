@@ -32,6 +32,14 @@ venv.bak/
 .env
 .env.local
 .env.*.local
+source-tool/qc-bdd100k/backend/GEMINI_API_KEY.txt
+
+# Model weights & checkpoints (large binary weights)
+*.pt
+*.pth
+*.onnx
+*.weights
+*.bin
 
 # IDEs & Editors
 .vscode/
@@ -45,6 +53,7 @@ venv.bak/
 **/obj/
 *.user
 *.suo
+.tools/
 
 # Operating System Files
 .DS_Store
@@ -57,3 +66,5 @@ report.csv
 report.json
 cleaned_labels.json
 tmp/
+.pytest_cache/
+source-tool/qc-bdd100k/.qc-data/

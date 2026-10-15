@@ -1,0 +1,213 @@
+{
+  "dataset": "BDD100K detection validation split",
+  "source_labels": "archive/bdd100k_labels_release/bdd100k/labels/bdd100k_labels_images_val.json",
+  "source_images": "archive/bdd100k/bdd100k/images/100k/val",
+  "selection": "first 40 entries in original validation annotation order; no labels modified",
+  "frames": 40,
+  "objects": 1081,
+  "annotations_file": "annotations.json",
+  "images_directory": "images/",
+  "images": [
+    {
+      "name": "b1c66a42-6f7d68ca.jpg",
+      "sha256": "76bf84536edbaf192a8a699efc62ba2b06056bac12c426ecfcc2e003d91fbd32",
+      "objects": 51
+    },
+    {
+      "name": "b1c81faa-3df17267.jpg",
+      "sha256": "8d91faeebbd3c7ba26a2e8877a9557fb62ad9fe0e51a83a13d8a2be5c32f9912",
+      "objects": 17
+    },
+    {
+      "name": "b1c81faa-c80764c5.jpg",
+      "sha256": "d60d83e09a23f819183cb7725ba4011665b26ebc137d35384198d376ac91cf2f",
+      "objects": 24
+    },
+    {
+      "name": "b1c9c847-3bda4659.jpg",
+      "sha256": "b7263e1490640e59ac547e3d4783484af84ba139429e235a9c5095d9f0340978",
+      "objects": 24
+    },
+    {
+      "name": "b1ca2e5d-84cf9134.jpg",
+      "sha256": "1ead19ec62c69d94b3329f8cc6142e74a02a5b07d2b3f2bd4c9c77b74aefa8a6",
+      "objects": 42
+    },
+    {
+      "name": "b1ca8418-84a133a0.jpg",
+      "sha256": "93d09740f72ec8842742715c5e6aad3c22e3522ce125ade465b446d9201a7fa9",
+      "objects": 11
+    },
+    {
+      "name": "b1cac6a7-04e33135.jpg",
+      "sha256": "54ada0f98638a4c968d8d29e47578ae1aed605a16a773e0dfea7d16071975744",
+      "objects": 20
+    },
+    {
+      "name": "b1cd1e94-26dd524f.jpg",
+      "sha256": "cd8812f3459762ccc483edb74c9f923ddd05adec32783dfbe8132921d477a346",
+      "objects": 33
+    },
+    {
+      "name": "b1cd1e94-549d0bfe.jpg",
+      "sha256": "f5da4f49797b718e4af25f381b3c7f49018b202dc8cd7f12328c640e67ff1b44",
+      "objects": 28
+    },
+    {
+      "name": "b1ceb32e-3f481b43.jpg",
+      "sha256": "f844b7240c220b576777a2837fe3b4fbf63117690172b0beba32f8861049e2d1",
+      "objects": 17
+    },
+    {
+      "name": "b1ceb32e-51852abe.jpg",
+      "sha256": "13a7e799ba80a1805cf635895fd46119d9d0d570bd612ef4619b6b85c8795c9d",
+      "objects": 25
+    },
+    {
+      "name": "b1ceb32e-813f84b2.jpg",
+      "sha256": "3c74d489a392fbd7772813c1f3f859682b3311fed714c9355d2cc18e57bbc1dd",
+      "objects": 15
+    },
+    {
+      "name": "b1ceb32e-a106591d.jpg",
+      "sha256": "4ae42968f105e08b82c426ab43d90b0f37e98d42871bea1bae07f0b4d0c17775",
+      "objects": 22
+    },
+    {
+      "name": "b1cebfb7-284f5117.jpg",
+      "sha256": "a78cb1df46bd660a580ba879a1bcf212b01088fe91579231aaf6009408833eb2",
+      "objects": 21
+    },
+    {
+      "name": "b1d0091f-75824d0d.jpg",
+      "sha256": "ef916dbe22ed1cefed4093218bb65f80e975b5a6fe9b733f66aa850f911dfaa1",
+      "objects": 33
+    },
+    {
+      "name": "b1d0091f-f2c2d2ae.jpg",
+      "sha256": "e9279f0ca3968bcef0e44298c8d868eacb156ee9acea022a2172b22b7ab098d1",
+      "objects": 26
+    },
+    {
+      "name": "b1d0a191-03dcecc2.jpg",
+      "sha256": "fa065acddb098e2e55d74996ba05c74ad159cc79d534f4914e699bcf64384cd2",
+      "objects": 58
+    },
+    {
+      "name": "b1d0a191-06deb55d.jpg",
+      "sha256": "18e304d7153742bb79ad2483b031eb361cc96df7916a18eebfc7cd45307f4ef5",
+      "objects": 37
+    },
+    {
+      "name": "b1d0a191-28f0e779.jpg",
+      "sha256": "b0307839248e1b8cbe3b50422e0a9a193d125b26f68a4f56a6f27dce2c2f4480",
+      "objects": 32
+    },
+    {
+      "name": "b1d0a191-2ed2269e.jpg",
+      "sha256": "8443c5fa0c253ab0ba17be2f102dabd5c0e4ff64e912a6393ad40e9daf59b2f0",
+      "objects": 51
+    },
+    {
+      "name": "b1d0a191-5490450b.jpg",
+      "sha256": "74578c7c0371d24ae0771e0b2d478f708d46bfcbb92574c0cd32c17e45e943af",
+      "objects": 29
+    },
+    {
+      "name": "b1d0a191-65deaeef.jpg",
+      "sha256": "6d179f859ba71e817b0fddb7b885d81df2124a8ee3cd76d84ad9ba789f20ec05",
+      "objects": 28
+    },
+    {
+      "name": "b1d0a191-de8948f6.jpg",
+      "sha256": "db753820bb8e776e9d7c8848c70b64887b77974daaf1a194e6e990d32b9944a2",
+      "objects": 25
+    },
+    {
+      "name": "b1d10d08-5b108225.jpg",
+      "sha256": "05178629b2e4f53d084f44752a2a34e25a9de04f2f5dabbef1e2e79e7fb57f1c",
+      "objects": 32
+    },
+    {
+      "name": "b1d10d08-743fd86c.jpg",
+      "sha256": "cc45d0a818d74f9b7b51fa828ca6ea9ddc751685457f92770baf81ee9dd17864",
+      "objects": 20
+    },
+    {
+      "name": "b1d10d08-c35503b8.jpg",
+      "sha256": "8d3620675a33d756afe8d729a7e37a318d05a84a5eadad041c90bb24c5717724",
+      "objects": 48
+    },
+    {
+      "name": "b1d10d08-da110fcb.jpg",
+      "sha256": "80aece274409bb8ac20376f9157fcb2c46a078ce4d0fb5fd7b0edd3a130cbb0b",
+      "objects": 45
+    },
+    {
+      "name": "b1d10d08-ec660956.jpg",
+      "sha256": "c155c652c0e84cf1f45d729221fa83256ebb8fd36dee2295d8707eaffe4e54a6",
+      "objects": 17
+    },
+    {
+      "name": "b1d22449-117aa773.jpg",
+      "sha256": "a406f7d12e9d7e5979c2e16cb01e8ab7cbfc3d541127fffe83da3223812b00cf",
+      "objects": 18
+    },
+    {
+      "name": "b1d22449-15fb948f.jpg",
+      "sha256": "b514bacc81a27bce610f15ea9692450c848c09fa3154ad51596122e56f00c269",
+      "objects": 21
+    },
+    {
+      "name": "b1d22ed6-f1cac061.jpg",
+      "sha256": "93abdb9533ade3cdca2dbbbdb9164bb28e73cca58c7cd946c88815daa8a83fa9",
+      "objects": 45
+    },
+    {
+      "name": "b1d3907b-2278601b.jpg",
+      "sha256": "cc1ab40b8a5f3a3cf51d6c5618bd2e2a65d22d5605c44a0852a88a11f5f78f92",
+      "objects": 23
+    },
+    {
+      "name": "b1d4b62c-60aab822.jpg",
+      "sha256": "7ad77062faa633e39e4f640c8547c862d9c100746b1e30a624e379288ea99e29",
+      "objects": 34
+    },
+    {
+      "name": "b1d4b62c-89eeb5d3.jpg",
+      "sha256": "a00a5644b1a8ba3e96124c8818861065c7376ea879a9d8e011f185399e527a3e",
+      "objects": 18
+    },
+    {
+      "name": "b1d4b62c-d9805029.jpg",
+      "sha256": "2f29b3ffa6b4b65ec56160f88936ef0227167f8027e3b7c132aad72a13302368",
+      "objects": 36
+    },
+    {
+      "name": "b1d59b1f-a38aec79.jpg",
+      "sha256": "ad80806109c56ae46bea48f57bfdbf3763b07212576a8dc6665093738f2a2c1a",
+      "objects": 10
+    },
+    {
+      "name": "b1d7b3ac-0bdb47dc.jpg",
+      "sha256": "bc095eb9d9f0c70c6741c58bc194273e8523641667be6409a15fed219feeb86c",
+      "objects": 21
+    },
+    {
+      "name": "b1d7b3ac-2a92e19f.jpg",
+      "sha256": "c6f580b1673329862f44a6ca41605af8b605ea100511faaf19106d7fecf8fd12",
+      "objects": 9
+    },
+    {
+      "name": "b1d7b3ac-36f2d3b7.jpg",
+      "sha256": "bbe61f01eb93afaea7dc4f83c6b14da3e9be0b7149a15db4038bbb6f283a7332",
+      "objects": 8
+    },
+    {
+      "name": "b1d7b3ac-5744370e.jpg",
+      "sha256": "c4afe38b929cb40aec32df062f3452c97ab6e9af6bc4d1fcc1f04fc4e0768d7d",
+      "objects": 7
+    }
+  ],
+  "license_note": "Use subject to the BDD100K dataset terms. The upstream code/toolkit BSD license does not by itself license the images or annotation data. Preserve the applicable dataset terms when sharing this pack."
+}
