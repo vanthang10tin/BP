@@ -48,16 +48,88 @@
                     <article class="setup-card"><div class="card-head"><span class="card-icon violet"><i class="bi bi-box-arrow-in-down"></i></span><span class="card-kicker">INPUT 01</span><span class="required">REQUIRED</span></div><h2>@(Mode == "segmentation" ? "Segmentation manifest" : "Dataset & labels")</h2><p>@(Mode == "segmentation" ? "Upload an image manifest with paired train-ID masks and images. Color masks are used for a visual overlay." : "Upload BDD100K, COCO, YOLO-JSON, or normalized frame annotations. Attach source images for local model inference.")</p>
                         <label class="dropzone" for="labels-file"><InputFile id="labels-file" OnChange="OnLabelsSelected" accept=".json,application/json" /><span class="upload-symbol"><i class="bi bi-file-earmark-arrow-up"></i></span><strong>@(LabelFileName ?? "Choose annotation JSON")</strong><small>@(LabelFileName is null ? "BDD100K labels · JSON" : $"{FrameCount} frames parsed · ready to analyze")</small><span class="browse-button">Browse files</span></label>
                         <div class="file-meta"><span><i class="bi bi-braces"></i> @(ProfileJson is null ? "BDD100K default · profile selects other formats" : GetString(ProfileJson.Value, "annotation_format", "custom profile"))</span><span><i class="bi bi-lock"></i> Stays in this workspace</span></div>
+                        <label class="compact-upload" for="profile-file" style="margin-top:12px;width:100%;justify-content:space-between"><InputFile id="profile-file" OnChange="OnProfileSelected" accept=".json,application/json" /><i class="bi bi-braces"></i><span>@(ProfileFileName ?? "Add dataset profile")</span><small>format · ontology · thresholds</small></label>
                     </article>
-                    <article class="setup-card profile-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-diagram-3"></i></span><span class="card-kicker">WORKSPACE SCHEMA</span><span class="optional">OPTIONAL</span></div><h2>Dataset profile & ontology</h2><p>For other datasets, set task, annotation format, class names/aliases, dimensions, mask IDs, and model label mapping in this JSON profile.</p><label>Workspace name<input class="profile-name" @bind="WorkspaceName" placeholder="e.g. Road inspection batch A" /></label><label class="compact-upload" for="profile-file"><InputFile id="profile-file" OnChange="OnProfileSelected" accept=".json,application/json" /><i class="bi bi-braces"></i><span>@(ProfileFileName ?? "Add profile JSON")</span><small>taxonomy · formats · thresholds</small></label></article>
+                    <article class="setup-card gemini-config-card">
+                        <div class="card-head"><span class="card-icon violet"><i class="bi bi-stars"></i></span><span class="card-kicker">CLOUD MODEL</span><span class="optional">OPTIONAL</span></div>
+                        <h2>Configure Gemini</h2>
+                        <p>Enter an API key to enable Gemini vision candidates. The key is saved only in the Python backend’s <code>.env</code> file and is never returned to this page.</p>
+                        <label>Gemini API key<input type="password" @bind="GeminiApiKey" placeholder="Paste your Gemini API key" autocomplete="new-password" /></label>
+                        <div class="cvat-config-footer">
+                            <button class="primary-button" disabled="@(IsGeminiConfigSaving || string.IsNullOrWhiteSpace(GeminiApiKey))" @onclick="SaveGeminiConfig">
+                                @(IsGeminiConfigSaving ? "Saving…" : "Save Gemini key") <i class="bi bi-shield-lock"></i>
+                            </button>
+                            <small>@(GeminiConfigured ? $"Key configured · {GeminiModel}" : "No Gemini key configured")</small>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(GeminiConfigMessage))
+                        {
+                            <div class="cvat-config-message @(GeminiConfigHasError ? "error" : "")" role="status">@GeminiConfigMessage</div>
+                        }
+                    </article>
                     <article class="setup-card"><div class="card-head"><span class="card-icon mint"><i class="bi bi-journal-check"></i></span><span class="card-kicker">INPUT 02</span><span class="required">REQUIRED</span></div><h2>Team guideline</h2><p>Provide a Markdown or text guideline. The built-in BDD100K text is an unapproved template; upload the project's approved policy before relying on policy-specific findings.</p>
                         <label class="dropzone guideline-drop" for="guideline-file"><InputFile id="guideline-file" OnChange="OnGuidelineSelected" accept=".md,.txt,text/plain,text/markdown" /><span class="upload-symbol"><i class="bi bi-journal-arrow-up"></i></span><strong>@(GuidelineFileName ?? "Choose guideline file")</strong><small>@(GuidelineFileName is null ? "Markdown or plain text" : $"{GuidelineFileName} · loaded")</small><span class="browse-button secondary">Browse files</span></label>
                         <div class="file-meta"><span><i class="bi bi-bookmark-check"></i> Clauses cited in issues</span><button class="text-button" @onclick="OpenGuideline">Edit current guideline <i class="bi bi-arrow-up-right"></i></button></div>
                     </article>
-                    <article class="setup-card image-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-images"></i></span><span class="card-kicker">@(Mode == "segmentation" ? "REQUIRED IMAGE + MASK PAIR" : "IMAGE INPUT")</span></div><h2>Frame images & masks</h2><p>@(Mode == "segmentation" ? "Attach JPGs, train-ID masks for metric comparison, and color masks for display." : "Attach matching images for local model inference. BDD100K archive lookup is a fallback.")</p><label class="compact-upload" for="images-file"><InputFile id="images-file" OnChange="OnImagesSelected" accept="image/*" multiple /><i class="bi bi-plus-lg"></i><span>@(ImageFiles.Count == 0 ? "Add images" : $"{ImageFiles.Count} images attached")</span><small>match by filename</small></label>@if (Mode == "segmentation") { <label class="compact-upload mask-upload" for="index-masks-file"><InputFile id="index-masks-file" OnChange="OnIndexMasksSelected" accept="image/png" multiple /><i class="bi bi-grid-3x3"></i><span>@(IndexMaskFiles.Count == 0 ? "Add train-ID masks" : $"{IndexMaskFiles.Count} index masks attached")</span><small>PNG · masks/index/</small></label><label class="compact-upload mask-upload" for="masks-file"><InputFile id="masks-file" OnChange="OnMasksSelected" accept="image/png" multiple /><i class="bi bi-layers"></i><span>@(MaskFiles.Count == 0 ? "Add color masks" : $"{MaskFiles.Count} color masks attached")</span><small>PNG · masks/color/</small></label> }</article>
+                    <article class="setup-card cvat-config-card">
+                        <div class="card-head"><span class="card-icon mint"><i class="bi bi-plug"></i></span><span class="card-kicker">BACKEND INTEGRATION</span><span class="required">REQUIRED</span></div>
+                        <h2>Connect to CVAT</h2>
+                        <p>Save connection settings to the backend-only <code>.env</code> file. The access token is not sent back to this page.</p>
+                        <label>CVAT_URL<input type="url" @bind="CvatUrl" placeholder="http://127.0.0.1:8080" autocomplete="url" /></label>
+                        <label>CVAT_ACCESS_TOKEN<input type="password" @bind="CvatAccessToken" placeholder="Paste your CVAT access token" autocomplete="new-password" /></label>
+                        <div class="cvat-config-footer">
+                            <button class="primary-button" disabled="@(IsCvatConfigSaving || string.IsNullOrWhiteSpace(CvatUrl) || string.IsNullOrWhiteSpace(CvatAccessToken))" @onclick="SaveCvatConfig">
+                                @(IsCvatConfigSaving ? "Saving…" : "Save CVAT settings") <i class="bi bi-shield-lock"></i>
+                            </button>
+                            <small>Written only to backend/.env</small>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(CvatConfigMessage))
+                        {
+                            <div class="cvat-config-message @(CvatConfigHasError ? "error" : "")" role="status">@CvatConfigMessage</div>
+                        }
+                    </article>
+                    <article class="setup-card image-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-images"></i></span><span class="card-kicker">@(Mode == "segmentation" ? "REQUIRED IMAGE + MASK PAIR" : "IMAGE INPUT")</span></div><h2>Frame images & masks</h2><p>@(Mode == "segmentation" ? "Attach JPGs, train-ID masks for metric comparison, and color masks for display." : "Attach matching images for local model inference. BDD100K archive lookup is a fallback.")</p><label class="compact-upload" for="images-file"><InputFile id="images-file" OnChange="OnImagesSelected" accept="image/*" multiple /><i class="bi bi-plus-lg"></i><span>@(ImageFiles.Count == 0 ? "Add images" : $"{ImageFiles.Count} images attached")</span><small>match by filename</small></label>@if (Mode == "segmentation") { <label class="compact-upload mask-upload" for="index-masks-file"><InputFile id="index-masks-file" OnChange="OnIndexMasksSelected" accept="image/png" multiple /><i class="bi bi-grid-3x3"></i><span>@(IndexMaskFiles.Count == 0 ? "Add train-ID masks" : $"{IndexMaskFiles.Count} index masks")</span><small>PNG · masks/index/</small></label><label class="compact-upload mask-upload" for="masks-file"><InputFile id="masks-file" OnChange="OnMasksSelected" accept="image/png" multiple /><i class="bi bi-layers"></i><span>@(MaskFiles.Count == 0 ? "Add color masks" : $"{MaskFiles.Count} color masks")</span><small>PNG · masks/color/</small></label> }</article>
+                    <article class="setup-card image-card">
+                        <div class="card-head"><span class="card-icon mint"><i class="bi bi-kanban"></i></span><span class="card-kicker">LOCAL CVAT REVIEW</span></div>
+                        <h2>Select a CVAT job</h2>
+                        <p>Choose a job from the connected local CVAT instance to open its review page in a new tab.</p>
+                        <div class="file-meta"><span><i class="bi bi-plug"></i> @CvatStateLabel</span></div>
+                        @if (!CvatReachable)
+                        {
+                            <small>@(string.IsNullOrWhiteSpace(CvatConnectionDetail) ? "Connect to CVAT above and save its settings to load jobs." : CvatConnectionDetail)</small>
+                        }
+                        else if (CvatJobList.Count == 0)
+                        {
+                            <small>No CVAT jobs found. Refresh after jobs are available.</small>
+                        }
+                        else
+                        {
+                            <label for="setup-cvat-job">CVAT job</label>
+                            <select id="setup-cvat-job" class="cvat-job-select" @onchange="OnJobSelected">
+                                <option value="0">-- Select a job --</option>
+                                @foreach (var job in CvatJobList)
+                                {
+                                    var jobId = GetInt(job, "id", 0);
+                                    var taskName = GetString(job, "task_name", "Task");
+                                    var frameCount = GetInt(job, "frame_count", 0);
+                                    <option value="@jobId" selected="@(CvatJobId == jobId)">Job #@jobId · @taskName (@frameCount frames)</option>
+                                }
+                            </select>
+                        }
+                        <div class="cvat-config-footer">
+                            <button class="outline-button" disabled="@(!CvatReachable || IsBusy)" @onclick="LoadCvatJobs"><i class="bi bi-arrow-clockwise"></i> Refresh jobs</button>
+                            @if (CvatReachable && CvatSelectedJobUrl is not null)
+                            {
+                                <a class="primary-button" href="@CvatSelectedJobUrl" target="_blank" rel="noopener noreferrer"><i class="bi bi-arrow-right"></i> Go to Review</a>
+                            }
+                            else
+                            {
+                                <button class="primary-button" disabled><i class="bi bi-arrow-right"></i> Go to Review</button>
+                            }
+                        </div>
+                    </article>
                 </div>
                 @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="status-message @(HasError ? "error" : "")"><i class="bi @(HasError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @StatusMessage</div> }
-                <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "Local + Gemini review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.")</small></span></div><button class="primary-button" disabled="@(LabelsJson is null || string.IsNullOrWhiteSpace(GuidelineText) || IsBusy)" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
+                <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "Local + Gemini review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.") Số lượng candidate có thể khác giữa máy do model/weights local khác nhau.</small></span></div><button class="primary-button" disabled="@(LabelsJson is null || string.IsNullOrWhiteSpace(GuidelineText) || IsBusy)" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
                 <div class="setup-card" style="margin-top:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
                     <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@(!GeminiConfigured || IsBusy)" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">@(GeminiConfigured ? "Đã có key: Gemini được chọn sẵn cho lần chạy; bỏ chọn nếu muốn local-only." : "Chưa có API key nên pipeline chỉ chạy local.") Model: @GeminiModel · Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
                     <label style="margin:0;max-width:180px">Số frame tối đa<input type="number" min="1" max="50" @bind="GeminiFrameLimit" disabled="@(!UseGemini || IsBusy)" /></label>
@@ -102,8 +174,8 @@
                             <!-- Thanh công cụ hiển thị Layer & Nhãn -->
                             <div class="canvas-controls-bar">
                                 <div class="layer-toggles">
-                                    <button class="layer-btn focus-mode @(OnlyShowIssues ? "active" : "")" @onclick="() => OnlyShowIssues = !OnlyShowIssues" title="Bật/Tắt chế độ chỉ hiển thị các box có lỗi hoặc nghi vấn (Ẩn box đúng)">
-                                        <i class="bi @(OnlyShowIssues ? "bi-funnel-fill" : "bi-funnel")"></i> @(OnlyShowIssues ? "🎯 Chỉ hiện box có lỗi: BẬT" : "👁️ Hiện tất cả (kể cả box đúng)")
+                                    <button class="layer-btn focus-mode @(OnlyShowIssues ? "active" : "")" @onclick="() => OnlyShowIssues = !OnlyShowIssues" title="Lọc box liên quan đến candidate cần người review; model disagreement không chứng minh nhãn sai.">
+                                        <i class="bi @(OnlyShowIssues ? "bi-funnel-fill" : "bi-funnel")"></i> @(OnlyShowIssues ? "🎯 Chỉ hiện box cần review: BẬT" : "👁️ Hiện tất cả box")
                                     </button>
                                     <button class="layer-btn human @(ShowHumanBoxes ? "active" : "")" @onclick="() => ShowHumanBoxes = !ShowHumanBoxes" title="Ẩn/Hiện nhãn người đánh (Màu xanh)">
                                         <span class="dot-human"></span> Nhãn người (@HumanBoxCount)
@@ -111,8 +183,8 @@
                                     <button class="layer-btn model @(ShowModelBoxes ? "active" : "")" @onclick="() => ShowModelBoxes = !ShowModelBoxes" title="Ẩn/Hiện AI Model YOLO26x (Màu tím)">
                                         <span class="dot-model"></span> Model AI (@ModelBoxCount)
                                     </button>
-                                    <button class="layer-btn issues @(ShowIssueBoxes ? "active" : "")" @onclick="() => ShowIssueBoxes = !ShowIssueBoxes" title="Ẩn/Hiện cảnh báo lỗi QC (Màu đỏ)">
-                                        <span class="dot-issue"></span> Cảnh báo QC (@IssueBoxCount)
+                                    <button class="layer-btn issues @(ShowIssueBoxes ? "active" : "")" @onclick="() => ShowIssueBoxes = !ShowIssueBoxes" title="Ẩn/hiện các candidate QC/model cần người review; đây không phải lỗi đã được xác nhận.">
+                                        <span class="dot-issue"></span> Candidate cần review (@IssueBoxCount)
                                     </button>
                                     <button class="layer-btn labels @(ShowTextLabels ? "active" : "")" @onclick="() => ShowTextLabels = !ShowTextLabels" title="Ẩn/Hiện chữ tên nhãn để không bị che khuất ảnh">
                                         <i class="bi @(ShowTextLabels ? "bi-eye" : "bi-eye-slash")"></i> @(ShowTextLabels ? "Tên nhãn: BẬT" : "Tên nhãn: TẮT")
@@ -281,7 +353,7 @@
                             <div class="panel-title">
                                 <div>
                                     <span class="eyebrow">FINDINGS</span>
-                                    <h2>Frame issues <span class="issue-count">@SelectedIssues.Count</span></h2>
+                                    <h2>Frame review candidates <span class="issue-count">@SelectedIssues.Count</span></h2>
                                 </div>
                                 <button class="icon-button" title="Export frame issues" @onclick="() => Step = 2">
                                     <i class="bi bi-box-arrow-up-right"></i>
@@ -441,32 +513,39 @@
     @if (CvatFrameMap.Count == 0)
     {
         <label class="cvat-confirm">
-            <input type="checkbox" @bind="ConfirmOffsetMapping" /> Tôi xác nhận thứ tự frame tải lên khớp với frame offset của CVAT Job.
+            <input type="checkbox" @bind="ConfirmOffsetMapping" /> Tôi xác nhận thứ tự frame trong QC khớp với frame offset của CVAT Job.
         </label>
     }
 
     <div class="cvat-buttons">
-        <button class="primary-button btn-return-cvat" disabled="@(CvatJobId <= 0 || (IssueCount == 0 && ConfirmedIssueCount == 0) || IsBusy)" @onclick="() => PushCvatIssues(true)">
-            <i class="bi bi-arrow-return-left"></i> ⚡ TRẢ JOB #@CvatJobId VỀ CVAT KÈM ISSUES (@(IncludeAllUnreviewed ? IssueCount : ConfirmedIssueCount) issues)
+        <button class="primary-button btn-return-cvat" disabled="@(CvatJobId <= 0 || CvatPushIssueCount == 0 || (CvatFrameMap.Count == 0 && !ConfirmOffsetMapping) || IsBusy)" @onclick="() => PushCvatIssues(true)">
+            <i class="bi bi-arrow-return-left"></i> ⚡ @(UpdateJobStateOnReturn ? "TRẢ JOB" : "ĐẨY ISSUES") #@CvatJobId @(UpdateJobStateOnReturn ? "VỀ CVAT KÈM ISSUES" : "LÊN CVAT") (@CvatPushIssueCount issues)
         </button>
-        <button class="outline-button" disabled="@(CvatJobId <= 0 || (IssueCount == 0 && ConfirmedIssueCount == 0) || IsBusy)" @onclick="() => PushCvatIssues(false)">
-            <i class="bi bi-send"></i> Chỉ đẩy Issues (Giữ nguyên trạng thái Job)
+        <button class="outline-button" disabled="@(CvatJobId <= 0 || CvatPushIssueCount == 0 || (CvatFrameMap.Count == 0 && !ConfirmOffsetMapping) || IsBusy)" @onclick="() => PushCvatIssues(false)">
+            <i class="bi bi-send"></i> Chỉ đẩy Issues (Giữ nguyên trạng thái Job) (@CvatPushIssueCount)
         </button>
     </div>
+
+    @if (!string.IsNullOrWhiteSpace(CvatOperationMessage))
+    {
+        <div class="status-message @(CvatOperationHasError ? "error" : "")">
+            <i class="bi @(CvatOperationHasError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @CvatOperationMessage
+        </div>
+    }
 
     @if (!string.IsNullOrWhiteSpace(CvatJobResultUrl))
     {
         <div class="cvat-result-card">
             <div class="cvat-result-head">
-                <span class="cvat-success-icon"><i class="bi bi-check-circle-fill"></i></span>
+                <span class="@(CvatOperationSucceeded ? "cvat-success-icon" : "cvat-warning-icon")"><i class="bi @(CvatOperationSucceeded ? "bi-check-circle-fill" : "bi-exclamation-triangle-fill")"></i></span>
                 <div>
-                    <h4>ĐÃ TRẢ JOB VỀ CVAT THÀNH CÔNG</h4>
-                    <p>Job ID: <b>#@CvatJobId</b> · Stage: <b>@TargetStage</b> · State: <b>@TargetState</b></p>
+                    <h4>@(CvatOperationSucceeded ? "CVAT operation completed" : "CVAT operation partially failed")</h4>
+                    <p>Job ID: <b>#@CvatJobId</b> · Stage: <b>@CvatResultStage</b> · State: <b>@CvatResultState</b></p>
                 </div>
             </div>
             <div class="cvat-result-actions">
                 <a href="@CvatJobResultUrl" target="_blank" class="primary-button cvat-open-btn">
-                    <i class="bi bi-box-arrow-up-right"></i> Mở thẳng Job trên CVAT (có sẵn issue)
+                    <i class="bi bi-box-arrow-up-right"></i> Mở Job đã xác minh trên CVAT
                 </a>
             </div>
         </div>
@@ -535,17 +614,45 @@
     private int CvatJobId;
     private int CvatFrameOffset;
     private int CvatAssigneeId;
+    private string CvatUrl = "";
+    private string CvatAccessToken = "";
+    private string? CvatConfigMessage;
+    private bool CvatConfigHasError;
+    private bool IsCvatConfigSaving;
+    private bool CvatReachable;
+    private string? CvatConnectionDetail;
     private string? CvatMappingFileName;
     private Dictionary<string, int> CvatFrameMap = new(StringComparer.OrdinalIgnoreCase);
     private bool ConfirmOffsetMapping;
-    private string CvatStateLabel = "CVAT CONNECTED";
+    private string CvatStateLabel = "CHECKING CVAT";
     private List<JsonElement> CvatJobList = new();
     private List<JsonElement> ModelProviders = new();
     private bool UseGemini;
     private bool GeminiConfigured;
     private string GeminiModel = "gemini-3.8-flash";
+    private string GeminiApiKey = "";
+    private string? GeminiConfigMessage;
+    private bool GeminiConfigHasError;
+    private bool IsGeminiConfigSaving;
     private int GeminiFrameLimit = 10;
     private string? CvatJobResultUrl;
+    private string? CvatOperationMessage;
+    private bool CvatOperationHasError;
+    private string CvatResultStage = "unchanged";
+    private string CvatResultState = "unchanged";
+    private bool CvatOperationSucceeded;
+    private string? CvatSelectedJobUrl
+    {
+        get
+        {
+            var job = CvatJobList.FirstOrDefault(item => GetInt(item, "id", 0) == CvatJobId);
+            var url = GetString(job, "url", "");
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+                ? uri.ToString()
+                : null;
+        }
+    }
     private string TargetStage = "annotation";
     private string TargetState = "rejected";
     private bool IncludeAllUnreviewed = true;
@@ -556,6 +663,11 @@
     private int PassCount => Frames.Count - ReviewCount;
     private int IssueCount => Frames.Sum(f => GetArray(f, "errors").Count);
     private int ConfirmedIssueCount => Frames.Sum(f => GetArray(f, "errors").Count(i => IssueDecisions.GetValueOrDefault(GetString(i, "issue_id", ""), GetString(i, "review_status", "pending")) == "confirmed"));
+    private int CvatPushIssueCount => Frames.Sum(f => GetArray(f, "errors").Count(i =>
+    {
+        var decision = GetIssueDecision(i);
+        return decision != "rejected" && decision != "dismissed" && (IncludeAllUnreviewed || decision == "confirmed");
+    }));
     private int RejectedIssueCount => Frames.Sum(f => GetArray(f, "errors").Count(i => {
         var d = IssueDecisions.GetValueOrDefault(GetString(i, "issue_id", ""), GetString(i, "review_status", "pending"));
         return d == "rejected" || d == "dismissed";
@@ -587,28 +699,63 @@
     private string ModelStatusText => ModelsMode == "local" ? SelectedModelText : ModelsMode == "simulated" ? "Simulated mode · demo only" : "Rules · local models unavailable";
     private HttpClient Api => HttpFactory.CreateClient("qc");
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        try { var health = await Api.GetFromJsonAsync<JsonElement>("/api/health"); ApiOnline = GetString(health, "status", "") == "ok"; ModelsMode = GetString(health, "models_mode", "disabled"); }
-        catch { ApiOnline = false; }
-        if (ApiOnline)
+        if (!firstRender) return;
+
+        try
         {
-            try { var modelInfo = await Api.GetFromJsonAsync<JsonElement>("/api/models"); ModelProviders = GetArray(modelInfo, "providers"); GeminiConfigured = GetBool(GetObject(modelInfo, "gemini"), "configured"); GeminiModel = GetString(GetObject(modelInfo, "gemini"), "model", GeminiModel); UseGemini = GeminiConfigured; }
-            catch { ModelProviders.Clear(); }
-            try
+            var health = await Api.GetFromJsonAsync<JsonElement>("/api/health");
+            ApiOnline = GetString(health, "status", "") == "ok";
+            ModelsMode = GetString(health, "models_mode", "disabled");
+        }
+        catch { ApiOnline = false; }
+
+        if (!ApiOnline)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            var modelInfo = await Api.GetFromJsonAsync<JsonElement>("/api/models");
+            ModelProviders = GetArray(modelInfo, "providers");
+            GeminiConfigured = GetBool(GetObject(modelInfo, "gemini"), "configured");
+            GeminiModel = GetString(GetObject(modelInfo, "gemini"), "model", GeminiModel);
+            UseGemini = GeminiConfigured;
+        }
+        catch { ModelProviders.Clear(); }
+        await InvokeAsync(StateHasChanged);
+
+        await RefreshCvatConnection();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshCvatConnection()
+    {
+        try
+        {
+            var cvat = await Api.GetFromJsonAsync<JsonElement>("/api/cvat/status");
+            CvatReachable = GetBool(cvat, "reachable");
+            CvatConnectionDetail = CvatReachable ? null : GetString(cvat, "detail", "CVAT connection failed.");
+            if (CvatReachable)
             {
-                var cvat = await Api.GetFromJsonAsync<JsonElement>("/api/cvat/status");
-                if (GetBool(cvat, "reachable"))
-                {
-                    CvatStateLabel = "CVAT CONNECTED";
-                    await LoadCvatJobs();
-                }
-                else
-                {
-                    CvatStateLabel = GetBool(cvat, "configured") ? "TOKEN / NETWORK ISSUE" : "TOKEN REQUIRED";
-                }
+                CvatStateLabel = "CVAT CONNECTED";
+                await LoadCvatJobs();
             }
-            catch { CvatStateLabel = "CVAT STATUS UNKNOWN"; }
+            else
+            {
+                CvatJobList.Clear();
+                CvatStateLabel = GetBool(cvat, "configured") ? "TOKEN / NETWORK ISSUE" : "TOKEN REQUIRED";
+            }
+        }
+        catch
+        {
+            CvatReachable = false;
+            CvatJobList.Clear();
+            CvatStateLabel = "CVAT STATUS UNKNOWN";
+            CvatConnectionDetail = "Could not read CVAT connection status from the QC backend.";
         }
     }
 
@@ -623,13 +770,41 @@
     }
     private async Task OnProfileSelected(InputFileChangeEventArgs e)
     {
-        try { await using var stream = e.File.OpenReadStream(2 * 1024 * 1024); using var doc = await JsonDocument.ParseAsync(stream); if (doc.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Profile phải là một JSON object."); ProfileJson = doc.RootElement.Clone(); ProfileFileName = e.File.Name; StatusMessage = $"Đã nạp schema/profile {e.File.Name}."; HasError = false; }
-        catch (Exception ex) { ProfileJson = null; StatusMessage = $"Không đọc được profile: {ex.Message}"; HasError = true; }
+        try { await using var stream = e.File.OpenReadStream(2 * 1024 * 1024); using var doc = await JsonDocument.ParseAsync(stream); if (doc.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Profile must be a JSON object."); ProfileJson = doc.RootElement.Clone(); ProfileFileName = e.File.Name; StatusMessage = $"Loaded dataset profile {e.File.Name}."; HasError = false; }
+        catch (Exception ex) { ProfileJson = null; StatusMessage = $"Could not read dataset profile: {ex.Message}"; HasError = true; }
     }
     private async Task OnLabelsSelected(InputFileChangeEventArgs e)
     {
-        try { var file = e.File; await using var stream = file.OpenReadStream(512 * 1024 * 1024); using var doc = await JsonDocument.ParseAsync(stream); LabelsJson = doc.RootElement.Clone(); LabelFileName = file.Name; if (WorkspaceName == "Local workspace") WorkspaceName = Path.GetFileNameWithoutExtension(file.Name); StatusMessage = $"Đã đọc {FrameCount} frame từ {file.Name}."; HasError = false; }
+        try
+        {
+            var file = e.File;
+            await using var stream = file.OpenReadStream(512 * 1024 * 1024);
+            using var doc = await JsonDocument.ParseAsync(stream);
+            if (IsCvatLabelDefinition(doc.RootElement))
+            {
+                LabelsJson = null;
+                LabelFileName = null;
+                StatusMessage = $"'{file.Name}' contains CVAT label definitions, not frame annotations. Upload frame-level annotations to run QC; use Local CVAT Review to open an existing CVAT job.";
+                HasError = true;
+                return;
+            }
+
+            LabelsJson = doc.RootElement.Clone();
+            LabelFileName = file.Name;
+            if (WorkspaceName == "Local workspace") WorkspaceName = Path.GetFileNameWithoutExtension(file.Name);
+            StatusMessage = $"Đã đọc {FrameCount} frame từ {file.Name}.";
+            HasError = false;
+        }
         catch (Exception ex) { LabelsJson = null; StatusMessage = $"Không đọc được file nhãn JSON: {ex.Message}"; HasError = true; }
+    }
+    private static bool IsCvatLabelDefinition(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() == 0) return false;
+        return root.EnumerateArray().All(label =>
+            label.ValueKind == JsonValueKind.Object
+            && label.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String
+            && label.TryGetProperty("type", out _)
+            && label.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Array);
     }
     private async Task OnGuidelineSelected(InputFileChangeEventArgs e)
     {
@@ -1020,11 +1195,20 @@
     }
     private async Task OnJobSelected(ChangeEventArgs e)
     {
-        if (int.TryParse(e.Value?.ToString(), out var jid) && jid > 0)
+        if (!int.TryParse(e.Value?.ToString(), out var jid) || jid <= 0)
         {
-            CvatJobId = jid;
-            await LoadCvatFrameMap();
+            CvatJobId = 0;
+            CvatFrameMap.Clear();
+            CvatMappingFileName = null;
+            CvatJobResultUrl = null;
+            CvatOperationSucceeded = false;
+            return;
         }
+
+        CvatJobId = jid;
+        CvatJobResultUrl = null;
+        CvatOperationSucceeded = false;
+        await LoadCvatFrameMap();
     }
     private async Task LoadCvatJobs()
     {
@@ -1046,6 +1230,100 @@
             HasError = true;
         }
     }
+    private async Task SaveCvatConfig()
+    {
+        if (IsCvatConfigSaving) return;
+        IsCvatConfigSaving = true;
+        CvatConfigMessage = null;
+        CvatConfigHasError = false;
+        try
+        {
+            using var response = await Api.PostAsJsonAsync("/api/cvat/config", new
+            {
+                cvat_url = CvatUrl,
+                cvat_access_token = CvatAccessToken
+            });
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseText = await response.Content.ReadAsStringAsync();
+                var detail = responseText;
+                try
+                {
+                    using var error = JsonDocument.Parse(responseText);
+                    detail = GetString(error.RootElement, "detail", responseText);
+                }
+                catch (JsonException) { }
+                CvatConfigMessage = $"Could not save CVAT settings: {detail}";
+                CvatConfigHasError = true;
+                return;
+            }
+
+            CvatAccessToken = "";
+            await RefreshCvatConnection();
+            CvatConfigMessage = CvatReachable
+                ? "CVAT settings saved and the local instance is connected."
+                : $"CVAT settings were saved, but the connection failed: {CvatConnectionDetail}";
+            CvatConfigHasError = !CvatReachable;
+        }
+        catch (HttpRequestException)
+        {
+            CvatConfigMessage = "Could not reach the QC backend. CVAT settings were not saved.";
+            CvatConfigHasError = true;
+        }
+        catch (TaskCanceledException)
+        {
+            CvatConfigMessage = "Saving CVAT settings timed out. Check the QC backend and try again.";
+            CvatConfigHasError = true;
+        }
+        finally
+        {
+            IsCvatConfigSaving = false;
+        }
+    }
+    private async Task SaveGeminiConfig()
+    {
+        if (IsGeminiConfigSaving || string.IsNullOrWhiteSpace(GeminiApiKey)) return;
+        IsGeminiConfigSaving = true;
+        GeminiConfigMessage = null;
+        GeminiConfigHasError = false;
+        try
+        {
+            using var response = await Api.PostAsJsonAsync("/api/gemini/config", new { api_key = GeminiApiKey });
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseText = await response.Content.ReadAsStringAsync();
+                var detail = responseText;
+                try
+                {
+                    using var error = JsonDocument.Parse(responseText);
+                    detail = GetString(error.RootElement, "detail", responseText);
+                }
+                catch (JsonException) { }
+                GeminiConfigMessage = $"Could not save Gemini key: {detail}";
+                GeminiConfigHasError = true;
+                return;
+            }
+
+            GeminiApiKey = "";
+            GeminiConfigured = true;
+            UseGemini = true;
+            GeminiConfigMessage = "Gemini key saved to the backend .env. Gemini is enabled for this browser session.";
+        }
+        catch (HttpRequestException)
+        {
+            GeminiConfigMessage = "Could not reach the QC backend. Gemini key was not saved.";
+            GeminiConfigHasError = true;
+        }
+        catch (TaskCanceledException)
+        {
+            GeminiConfigMessage = "Saving Gemini key timed out. Check the QC backend and try again.";
+            GeminiConfigHasError = true;
+        }
+        finally
+        {
+            IsGeminiConfigSaving = false;
+        }
+    }
     private async Task LoadCvatFrameMap()
     {
         if (CvatJobId <= 0) return;
@@ -1062,10 +1340,17 @@
     }
     private async Task PushCvatIssues(bool returnJob = true)
     {
-        if (CvatJobId <= 0) { StatusMessage = "Vui lòng chọn hoặc nhập CVAT Job ID."; HasError = true; return; }
-        var totalAvailable = IncludeAllUnreviewed ? IssueCount : ConfirmedIssueCount;
-        if (totalAvailable == 0) { StatusMessage = "Không có issue nào để gửi lên CVAT."; HasError = true; return; }
+        if (CvatJobId <= 0) { CvatOperationMessage = "Vui lòng chọn hoặc nhập CVAT Job ID."; CvatOperationHasError = true; return; }
+        if (CvatPushIssueCount == 0) { CvatOperationMessage = "Không có issue phù hợp để gửi lên CVAT. Hãy Confirm issue hoặc bật gửi candidate chưa duyệt."; CvatOperationHasError = true; return; }
+        if (CvatFrameMap.Count == 0 && !ConfirmOffsetMapping) { CvatOperationMessage = "Hãy nạp frame map từ đúng CVAT Job hoặc xác nhận rõ frame offset trước khi gửi."; CvatOperationHasError = true; return; }
         IsBusy = true;
+        CvatJobResultUrl = null;
+        CvatOperationSucceeded = false;
+        CvatOperationMessage = null;
+        CvatOperationHasError = false;
+        CvatResultStage = "unchanged";
+        CvatResultState = "unchanged";
+        HasError = false;
         try
         {
             var payload = new
@@ -1083,21 +1368,54 @@
             };
             using var response = await Api.PostAsJsonAsync("/api/cvat/push-issues", payload);
             var body = await response.Content.ReadAsStringAsync();
-            if (!response.IsSuccessStatusCode) throw new InvalidOperationException(body);
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = body;
+                try
+                {
+                    using var error = JsonDocument.Parse(body);
+                    detail = GetString(error.RootElement, "detail", body);
+                }
+                catch (JsonException) { }
+                throw new InvalidOperationException($"CVAT API HTTP {(int)response.StatusCode}: {detail}");
+            }
             using var result = JsonDocument.Parse(body);
             var created = GetInt(result.RootElement, "created", 0);
             var skipped = GetInt(result.RootElement, "skipped_existing", 0);
-            var failed = GetArray(result.RootElement, "failed").Count;
-            CvatJobResultUrl = GetString(result.RootElement, "cvat_job_url", $"http://127.0.0.1:8080/jobs/{CvatJobId}");
-            var jobStage = GetString(result.RootElement, "job_stage", TargetStage);
-            var jobState = GetString(result.RootElement, "job_state", TargetState);
-            StatusMessage = returnJob
-                ? $"✅ Đã trả Job #{CvatJobId} về CVAT! Tạo {created} issues trên các frame ({skipped} trùng lặp). Job đã chuyển sang Stage: {jobStage}, State: {jobState}."
-                : $"CVAT: Tạo {created} issues ({skipped} trùng lặp). Trạng thái job giữ nguyên.";
-            HasError = failed > 0;
-            CvatStateLabel = returnJob ? $"JOB RETURNED ({jobState.ToUpperInvariant()})" : "PUSH COMPLETE";
+            var failed = GetArray(result.RootElement, "failed");
+            var apiStatus = GetString(result.RootElement, "status", "");
+            var responseJobId = GetInt(result.RootElement, "job_id", 0);
+            var jobStateChanged = GetBool(result.RootElement, "job_state_changed");
+            var requiresJobReturn = returnJob && UpdateJobStateOnReturn;
+            var resultUrl = GetString(result.RootElement, "cvat_job_url", "");
+            if (Uri.TryCreate(resultUrl, UriKind.Absolute, out var jobUri) && jobUri.Scheme is "http" or "https")
+                CvatJobResultUrl = jobUri.ToString();
+            CvatResultStage = GetString(result.RootElement, "job_stage", "unchanged");
+            CvatResultState = GetString(result.RootElement, "job_state", "unchanged");
+            CvatOperationSucceeded = apiStatus == "success" && failed.Count == 0 && responseJobId == CvatJobId && (!requiresJobReturn || jobStateChanged);
+            HasError = !CvatOperationSucceeded;
+            if (CvatOperationSucceeded)
+            {
+                CvatOperationMessage = requiresJobReturn
+                    ? $"CVAT confirmed Job #{CvatJobId} returned. Created {created} issues; {skipped} duplicates were already present. Stage: {CvatResultStage}; state: {CvatResultState}."
+                    : $"CVAT confirmed {created} issues created; {skipped} duplicates were already present. Job state was not changed.";
+                CvatStateLabel = requiresJobReturn ? $"JOB RETURNED ({CvatResultState.ToUpperInvariant()})" : "ISSUES PUSHED";
+            }
+            else
+            {
+                var failureDetails = failed.Select(item =>
+                {
+                    var detail = GetString(item, "error", GetString(item, "message", ""));
+                    return string.IsNullOrWhiteSpace(detail) ? GetString(item, "frame", "CVAT operation failed") : detail;
+                }).Where(detail => !string.IsNullOrWhiteSpace(detail));
+                var details = string.Join(" | ", failureDetails);
+                CvatOperationMessage = $"CVAT did not confirm a complete operation (status: {apiStatus}, job: #{responseJobId}, created: {created}, duplicates: {skipped})."
+                    + (details.Length > 0 ? $" Details: {details}" : "");
+                CvatStateLabel = "PARTIAL / NOT CONFIRMED";
+            }
+            CvatOperationHasError = !CvatOperationSucceeded;
         }
-        catch (Exception ex) { StatusMessage = $"Không đẩy được issue lên CVAT: {ex.Message}"; HasError = true; CvatStateLabel = "NOT CONNECTED"; }
+        catch (Exception ex) { CvatJobResultUrl = null; CvatOperationSucceeded = false; CvatOperationMessage = $"Không đẩy được issue lên CVAT: {ex.Message}"; CvatOperationHasError = true; CvatStateLabel = "NOT CONNECTED"; }
         finally { IsBusy = false; }
     }
     private async Task CopyIssue(JsonElement issue) { await JS.InvokeVoidAsync("navigator.clipboard.writeText", $"{GetString(issue,"error_type","Issue")}: {GetString(issue,"explanation","")}\nRule: {GetString(issue,"guideline_rule","")}"); StatusMessage = "Đã copy ghi chú issue."; }

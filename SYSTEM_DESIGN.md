@@ -60,7 +60,7 @@ App và API bind `127.0.0.1`; model adapters mặc định loopback. Frontend g�
 
 ### Tích hợp Gemini đã triển khai
 
-- Backend gọi REST `generateContent` qua `backend/gemini_provider.py`; key đọc từ file local `backend/GEMINI_API_KEY.txt` (hoặc biến môi trường `GEMINI_API_KEY` khi deploy), model từ `GEMINI_MODEL` (mặc định `gemini-3.8-flash`). File key bị Git ignore. Không thêm SDK dependency.
+- Backend gọi REST `generateContent` qua `backend/gemini_provider.py`; key được lưu trong `backend/.env` dưới `GEMINI_API_KEY` qua card Configure Gemini (hoặc cấu hình biến môi trường khi deploy), model từ `GEMINI_MODEL` (mặc định `gemini-3.8-flash`). Không thêm SDK dependency.
 - Frontend gọi API kiểm tra cấu hình; bật riêng checkbox và chọn frame cap trước khi QC. Chưa có key thì checkbox disabled. Không có credential nào nhúng trong frontend.
 - Response có JSON schema, chuyển tọa độ normalized Gemini `[ymin,xmin,ymax,xmax]` sang pixel, ghi thành issue/model proposal có `qa_layer=Gemini cloud candidate` và không mutate source labels.
 - Hạn chế hiện tại: pipeline kiểm từng frame trong queue ưu tiên đầu tiên; đầu vào guideline + toàn bộ danh sách labels của frame có thể đi kèm request. Gemini box là gợi ý vision, chưa chứng minh class/geometry chính xác. API call thật chưa thể kiểm tra khi chưa có key hợp lệ; cần pilot ít frame trước khi chạy batch lớn.

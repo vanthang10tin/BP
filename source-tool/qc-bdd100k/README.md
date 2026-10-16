@@ -12,6 +12,8 @@ Local-first workflow for reviewing BDD100K-style 2D annotations. The repository 
 
 **Model status:** the QC backend calls the local CVAT Nuclio BBox detector and DINOv3 semantic-mask provider through loopback adapters. It does not call Gemini or another hosted VLM. Detector/mask disagreements are unverified review candidates; no label is auto-corrected. The DINO/SAM components available on this machine are not all interchangeable: SAM2 is a prompt/refinement tool, not the image-level semantic model. See [AI_RECOMMENDATIONS.md](../../AI_RECOMMENDATIONS.md).
 
+Model availability and candidate counts are host-specific: a machine with local YOLO26 weights or a reachable CVAT Nuclio endpoint can produce candidates while a machine without either will report model skips. Check `http://127.0.0.1:8000/api/models` on each host before comparing runs. Model disagreements are review candidates, not confirmed annotation errors; use the same model, weights, threshold, labels, and images when comparing results.
+
 ## Run the new Blazor workflow
 
 Use the two-terminal setup in [`../../RUN_GUIDE.md`](../../RUN_GUIDE.md), or:

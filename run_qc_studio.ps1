@@ -106,7 +106,7 @@ if (-not (Test-Http "$apiUrl/api/health")) {
     }
     $backendArgs = @($pythonInfo.Prefix) + @('-u', 'backend/app.py')
     $emptyIn = Join-Path $runtimeDir 'empty.in'
-    Set-Content -LiteralPath $emptyIn -Value '' -NoNewline
+    if (-not (Test-Path -LiteralPath $emptyIn)) { Set-Content -LiteralPath $emptyIn -Value '' -NoNewline }
     $backend = Start-Process -FilePath $pythonInfo.File -ArgumentList $backendArgs -WorkingDirectory $appRoot -PassThru -RedirectStandardInput $emptyIn -RedirectStandardOutput $backendLog -RedirectStandardError $backendErrorLog -WindowStyle Hidden
     $deadline = (Get-Date).AddSeconds(45)
     while ((Get-Date) -lt $deadline -and -not (Test-Http "$apiUrl/api/health")) {

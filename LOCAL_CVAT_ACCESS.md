@@ -19,6 +19,19 @@ The existing CVAT containers, database, annotation files, and Docker volumes wer
 - The CVAT UI bundle and the local projection overlay JavaScript return HTTP 200.
 - `/d14-overlay/private/config.json` returns HTTP 401 when unauthenticated, as expected for the protected overlay config.
 
+## Sending QC issues from QC Studio
+
+The CVAT gateway alone does not authorize QC Studio. In QC Studio's Prepare screen, use the Connect to CVAT card to enter the CVAT URL and a scoped access token. QC Studio writes these values only to `source-tool/qc-bdd100k/backend/.env`; the saved token is not returned in the API response or persisted by the frontend. The backend applies the new configuration immediately, so a restart is not required.
+
+For manual setup, configure the backend `.env`:
+
+```text
+CVAT_URL=http://127.0.0.1:8080
+CVAT_ACCESS_TOKEN=<scoped-CVAT-token>
+```
+
+Keep the real token out of source control, browser code, and screenshots. In Export, select the CVAT Job and load its frame map before pushing. If using a frame offset instead, explicitly confirm the frame ordering. The backend verifies the job and frame range, creates issues only at supplied evidence boxes, and updates Stage/State only after issue creation has no failures. A partial or failed API response is reported as such; it is not presented as a successful return.
+
 ## Operations
 
 Check gateway state:

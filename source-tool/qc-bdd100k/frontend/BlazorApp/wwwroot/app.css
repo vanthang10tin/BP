@@ -21,9 +21,11 @@
 .btn-return-cvat{background:linear-gradient(135deg,#ef4444,#dc2626)!important;color:#fff!important;border:none!important;font-weight:600;display:inline-flex;align-items:center;gap:6px;padding:9px 16px!important;border-radius:6px;cursor:pointer}
 .btn-return-cvat:hover{background:linear-gradient(135deg,#f87171,#ef4444)!important;box-shadow:0 0 15px rgba(239,68,68,0.4)}
 .btn-return-cvat:disabled{opacity:0.4;cursor:not-allowed}
+.cvat-config-card label,.gemini-config-card label{display:block;margin-top:12px;color:#aab5c5;font-size:10px}.cvat-config-card input,.gemini-config-card input{display:block;width:100%;margin-top:6px;padding:9px 10px;border:1px solid #303d4f;border-radius:6px;background:#0c121b;color:#e5eaf1;font:10px 'DM Mono',monospace}.cvat-config-card input:focus,.gemini-config-card input:focus{outline:none;border-color:#8e81ff}.cvat-config-card>p code,.gemini-config-card>p code{color:#b9b0ff;font:10px 'DM Mono',monospace}.cvat-config-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px}.cvat-config-footer small{color:#8391a4;font-size:9px}.cvat-config-message{margin-top:12px;padding:9px 10px;border:1px solid #315749;border-radius:6px;background:#12231f;color:#a6e5d2;font-size:10px}.cvat-config-message.error{border-color:#61303b;background:#301b24;color:#ffc1c8}
 .cvat-result-card{margin-top:16px;background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(14,165,233,0.1));border:1px solid #10b981;border-radius:8px;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap}
 .cvat-result-head{display:flex;align-items:center;gap:12px}
 .cvat-success-icon{font-size:24px;color:#10b981}
+.cvat-warning-icon{font-size:24px;color:#f59e0b}
 .cvat-result-head h4{margin:0;font-size:12px;color:#34d399;font-weight:700;letter-spacing:0.5px}
 .cvat-result-head p{margin:4px 0 0;font-size:10px;color:#cbd5e1}
 .cvat-open-btn{background:linear-gradient(135deg,#3b82f6,#6366f1)!important;color:#fff!important;text-decoration:none;display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:6px;font-size:11px;font-weight:600}

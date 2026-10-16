@@ -27,4 +27,12 @@ foreach ($name in @('frontend', 'backend')) {
     }
     Remove-Item -LiteralPath $pidFile -Force
 }
+$frontendExe = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'source-tool/qc-bdd100k/frontend/BlazorApp/bin/Release/net10.0/BlazorApp.exe'))
+$orphanedFrontends = Get-CimInstance Win32_Process -Filter "Name = 'BlazorApp.exe'" -ErrorAction SilentlyContinue | Where-Object {
+    $_.ExecutablePath -and [System.IO.Path]::GetFullPath($_.ExecutablePath) -eq $frontendExe
+}
+foreach ($process in $orphanedFrontends) {
+    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+    Write-Host "Stopped orphaned frontend (PID $($process.ProcessId))."
+}
 Write-Host 'CVAT, Docker and model containers were not stopped.'

@@ -1,0 +1,104 @@
+{
+  "status": "success",
+  "task_type": "bbox",
+  "annotation_format": "normalized",
+  "guideline_status": "active",
+  "models": [
+    {
+      "id": "bbox",
+      "available": true,
+      "privacy": "loopback",
+      "name": "Synthetic mock detector (sample only)",
+      "device": "cpu",
+      "type": "bbox",
+      "label_count": 0,
+      "supported_classes": [
+        "car"
+      ],
+      "thresholds": {},
+      "error": null
+    }
+  ],
+  "model_issues": 1,
+  "model_skips": [],
+  "summary": {
+    "total_frames": 1,
+    "total_errors": 1,
+    "model_candidate_issues": 1,
+    "frames_skipped_for_model": 0,
+    "benchmark": {
+      "available": false,
+      "reason": "Independent adjudicated gold labels are required."
+    }
+  },
+  "sorted_frames": [
+    {
+      "frame_name": "b1c66a42-6f7d68ca.jpg",
+      "frame_index": 0,
+      "priority_rank": 3,
+      "priority_label": "REVIEW CANDIDATE",
+      "recommendation": "Human review required",
+      "error_count": 1,
+      "errors": [
+        {
+          "issue_id": "b1c66a42-6f7d68ca.jpg:prediction:0",
+          "object_id": "MODEL_0",
+          "category": "car",
+          "severity": "MEDIUM",
+          "error_type": "POSSIBLE_UNLABELED_OBJECT",
+          "qa_layer": "Local model candidate",
+          "component": "Synthetic mock detector (sample only)",
+          "model_name": "Synthetic mock detector (sample only)",
+          "model_confidence": 0.94,
+          "models_flagged": [
+            "Synthetic mock detector (sample only)"
+          ],
+          "explanation": "Local detector proposed car (confidence=0.940) without a class/IoU match in the uploaded labels. Confirm against guideline before changing annotations.",
+          "action": "Inspect the proposal and confirm or dismiss it.",
+          "suggested_box": [
+            900,
+            100,
+            1150,
+            500
+          ],
+          "review_status": "pending",
+          "auto_healable": false,
+          "guideline_rule": "No matching clause in the active workspace guideline; human review required."
+        }
+      ],
+      "labels": [],
+      "width": 1280,
+      "height": 720,
+      "model_predictions": [
+        {
+          "category": "car",
+          "model_label": "car",
+          "box": [
+            900,
+            100,
+            1150,
+            500
+          ],
+          "confidence": 0.94,
+          "model": "Synthetic mock detector (sample only)",
+          "type": "rectangle"
+        }
+      ],
+      "model_coverage": {
+        "classes_in_project": [
+          "car"
+        ],
+        "classes_predicted": [
+          "car"
+        ],
+        "annotated_objects": 0,
+        "predictions": 1,
+        "match_iou": 0.5
+      },
+      "priority_level": "REVIEW CANDIDATE"
+    }
+  ],
+  "workspace_id": "950732cd-84df-4300-ace9-d611e19212d3",
+  "guideline_version": 1,
+  "guideline_sha256": "d5c95c982ca4d40e3cb78e4144ed994f964bb05707d674b00c58d83bb42a357d"
+}

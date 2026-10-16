@@ -32,7 +32,7 @@ def model_name() -> str:
 def inspect_frame(image_data: bytes, guideline: str, labels: list[dict], classes: list[str]) -> list[dict]:
     key = _api_key()
     if not key:
-        raise ValueError("Gemini chưa có key. Dán key vào backend/GEMINI_API_KEY.txt rồi khởi động lại backend.")
+        raise ValueError("Gemini API key is not configured. Add GEMINI_API_KEY to the backend .env file.")
     # Candidate-only instruction: Gemini never edits ground truth or decides policy compliance.
     prompt = (
         "Inspect this image for objects required by the team's guideline. Return only visible, "
