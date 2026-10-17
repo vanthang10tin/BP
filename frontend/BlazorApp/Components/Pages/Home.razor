@@ -50,22 +50,6 @@
                         <div class="file-meta"><span><i class="bi bi-braces"></i> @(ProfileJson is null ? "BDD100K default · profile selects other formats" : GetString(ProfileJson.Value, "annotation_format", "custom profile"))</span><span><i class="bi bi-lock"></i> Stays in this workspace</span></div>
                         <label class="compact-upload" for="profile-file" style="margin-top:12px;width:100%;justify-content:space-between"><InputFile id="profile-file" OnChange="OnProfileSelected" accept=".json,application/json" /><i class="bi bi-braces"></i><span>@(ProfileFileName ?? "Add dataset profile")</span><small>format · ontology · thresholds</small></label>
                     </article>
-                    <article class="setup-card gemini-config-card">
-                        <div class="card-head"><span class="card-icon violet"><i class="bi bi-stars"></i></span><span class="card-kicker">CLOUD MODEL</span><span class="optional">OPTIONAL</span></div>
-                        <h2>Configure Gemini</h2>
-                        <p>Enter an API key to enable Gemini vision candidates. The key is saved only in the Python backend’s <code>.env</code> file and is never returned to this page.</p>
-                        <label>Gemini API key<input type="password" @bind="GeminiApiKey" placeholder="Paste your Gemini API key" autocomplete="new-password" /></label>
-                        <div class="cvat-config-footer">
-                            <button class="primary-button" disabled="@(IsGeminiConfigSaving || string.IsNullOrWhiteSpace(GeminiApiKey))" @onclick="SaveGeminiConfig">
-                                @(IsGeminiConfigSaving ? "Saving…" : "Save Gemini key") <i class="bi bi-shield-lock"></i>
-                            </button>
-                            <small>@(GeminiConfigured ? $"Key configured · {GeminiModel}" : "No Gemini key configured")</small>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(GeminiConfigMessage))
-                        {
-                            <div class="cvat-config-message @(GeminiConfigHasError ? "error" : "")" role="status">@GeminiConfigMessage</div>
-                        }
-                    </article>
                     <article class="setup-card"><div class="card-head"><span class="card-icon mint"><i class="bi bi-journal-check"></i></span><span class="card-kicker">INPUT 02</span><span class="required">REQUIRED</span></div><h2>Team guideline</h2><p>Provide a Markdown or text guideline. The built-in BDD100K text is an unapproved template; upload the project's approved policy before relying on policy-specific findings.</p>
                         <label class="dropzone guideline-drop" for="guideline-file"><InputFile id="guideline-file" OnChange="OnGuidelineSelected" accept=".md,.txt,text/plain,text/markdown" /><span class="upload-symbol"><i class="bi bi-journal-arrow-up"></i></span><strong>@(GuidelineFileName ?? "Choose guideline file")</strong><small>@(GuidelineFileName is null ? "Markdown or plain text" : $"{GuidelineFileName} · loaded")</small><span class="browse-button secondary">Browse files</span></label>
                         <div class="file-meta"><span><i class="bi bi-bookmark-check"></i> Clauses cited in issues</span><button class="text-button" @onclick="OpenGuideline">Edit current guideline <i class="bi bi-arrow-up-right"></i></button></div>
@@ -103,24 +87,23 @@
                         }
 
                         <label>CVAT_URL
-                            <input type="url" @bind="CvatUrl" placeholder="https://app.cvat.ai" autocomplete="url" />
+                            <input type="url" @bind="CvatUrl" @bind:event="oninput" @onkeydown="OnCvatKeydown" placeholder="https://app.cvat.ai" autocomplete="url" />
                         </label>
                         <label>CVAT_ACCESS_TOKEN (Personal Access Token)
-                            <input type="password" @bind="CvatAccessToken" placeholder="Dán mã Token từ CVAT vào đây" autocomplete="new-password" />
+                            <input type="password" @bind="CvatAccessToken" @bind:event="oninput" @onkeydown="OnCvatKeydown" placeholder="Dán mã Token từ CVAT vào đây" autocomplete="new-password" />
                         </label>
                         <div class="cvat-config-footer">
-                            <button class="primary-button" disabled="@(IsCvatConfigSaving || string.IsNullOrWhiteSpace(CvatUrl) || (string.IsNullOrWhiteSpace(CvatAccessToken) && string.IsNullOrWhiteSpace(CvatActiveToken)))" @onclick="SaveCvatConfig">
-                                @(IsCvatConfigSaving ? "Connecting…" : "Connect & Save CVAT") <i class="bi bi-shield-lock"></i>
+                            <button type="button" class="primary-button" disabled="@IsCvatConfigSaving" @onclick="SaveCvatConfig">
+                                @(IsCvatConfigSaving ? "Đang kết nối…" : "Connect & Save CVAT") <i class="bi bi-shield-lock"></i>
                             </button>
-                            <small>@(CvatReachable ? "Connected" : "Token is kept secure in session")</small>
+                            <small>@(CvatReachable ? (string.IsNullOrWhiteSpace(CvatUsername) ? "Connected" : $"Connected ({CvatUsername})") : "Sẵn sàng kết nối")</small>
                         </div>
                         @if (!string.IsNullOrWhiteSpace(CvatConfigMessage))
                         {
                             <div class="cvat-config-message @(CvatConfigHasError ? "error" : "")" role="status">@CvatConfigMessage</div>
                         }
                     </article>
-                    <article class="setup-card image-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-images"></i></span><span class="card-kicker">@(Mode == "segmentation" ? "REQUIRED IMAGE + MASK PAIR" : "IMAGE INPUT")</span></div><h2>Frame images & masks</h2><p>@(Mode == "segmentation" ? "Attach JPGs, train-ID masks for metric comparison, and color masks for display." : "Attach matching images for local model inference. BDD100K archive lookup is a fallback.")</p><label class="compact-upload" for="images-file"><InputFile id="images-file" OnChange="OnImagesSelected" accept="image/*" multiple /><i class="bi bi-plus-lg"></i><span>@(ImageFiles.Count == 0 ? "Add images" : $"{ImageFiles.Count} images attached")</span><small>match by filename</small></label>@if (Mode == "segmentation") { <label class="compact-upload mask-upload" for="index-masks-file"><InputFile id="index-masks-file" OnChange="OnIndexMasksSelected" accept="image/png" multiple /><i class="bi bi-grid-3x3"></i><span>@(IndexMaskFiles.Count == 0 ? "Add train-ID masks" : $"{IndexMaskFiles.Count} index masks")</span><small>PNG · masks/index/</small></label><label class="compact-upload mask-upload" for="masks-file"><InputFile id="masks-file" OnChange="OnMasksSelected" accept="image/png" multiple /><i class="bi bi-layers"></i><span>@(MaskFiles.Count == 0 ? "Add color masks" : $"{MaskFiles.Count} color masks")</span><small>PNG · masks/color/</small></label> }</article>
-                    <article class="setup-card image-card">
+                    <article class="setup-card cvat-jobs-card">
                         <div class="card-head"><span class="card-icon mint"><i class="bi bi-kanban"></i></span><span class="card-kicker">CVAT REVIEW & JOBS</span></div>
                         <h2>Select a CVAT job</h2>
                         <p>Chọn một Job từ instance CVAT đã kết nối để mở trang review hoặc nạp trực tiếp vào workspace.</p>
@@ -154,28 +137,24 @@
                             </select>
                         }
                         <div class="cvat-config-footer">
-                            <button class="outline-button" disabled="@(!CvatReachable || IsBusy)" @onclick="LoadCvatJobs"><i class="bi bi-arrow-clockwise"></i> Refresh jobs</button>
-                            @if (CvatReachable && CvatJobId > 0)
+                            <button type="button" class="outline-button" disabled="@IsBusy" @onclick="LoadCvatJobs"><i class="bi bi-arrow-clockwise"></i> Refresh jobs</button>
+                            @if (CvatJobId > 0)
                             {
-                                <button class="outline-button" disabled="@IsBusy" @onclick="PullJobFromCvat" style="color:#6ee7b7;border-color:#059669"><i class="bi bi-cloud-arrow-down"></i> Nạp Job vào QC</button>
+                                <button type="button" class="primary-button" disabled="@IsBusy" @onclick="PullJobFromCvat" style="background:#059669;border-color:#059669"><i class="bi bi-cloud-arrow-down"></i> Tải Dataset từ CVAT Job</button>
                             }
-                            @if (CvatReachable && CvatSelectedJobUrl is not null)
+                            @if (CvatSelectedJobUrl is not null)
                             {
                                 <a class="primary-button" href="@CvatSelectedJobUrl" target="_blank" rel="noopener noreferrer"><i class="bi bi-arrow-right"></i> Mở trên CVAT</a>
                             }
-                            else
-                            {
-                                <button class="primary-button" disabled><i class="bi bi-arrow-right"></i> Mở trên CVAT</button>
-                            }
                         </div>
                     </article>
+                    <article class="setup-card image-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-images"></i></span><span class="card-kicker">@(Mode == "segmentation" ? "REQUIRED IMAGE + MASK PAIR" : "IMAGE INPUT")</span></div><h2>Frame images & masks</h2><p>@(Mode == "segmentation" ? "Attach JPGs, train-ID masks for metric comparison, and color masks for display." : "Attach matching images for local model inference. BDD100K archive lookup is a fallback.")</p><label class="compact-upload" for="images-file"><InputFile id="images-file" OnChange="OnImagesSelected" accept="image/*" multiple /><i class="bi bi-plus-lg"></i><span>@(ImageFiles.Count == 0 ? "Add images" : $"{ImageFiles.Count} images attached")</span><small>match by filename</small></label>@if (Mode == "segmentation") { <label class="compact-upload mask-upload" for="index-masks-file"><InputFile id="index-masks-file" OnChange="OnIndexMasksSelected" accept="image/png" multiple /><i class="bi bi-grid-3x3"></i><span>@(IndexMaskFiles.Count == 0 ? "Add train-ID masks" : $"{IndexMaskFiles.Count} index masks")</span><small>PNG · masks/index/</small></label><label class="compact-upload mask-upload" for="masks-file"><InputFile id="masks-file" OnChange="OnMasksSelected" accept="image/png" multiple /><i class="bi bi-layers"></i><span>@(MaskFiles.Count == 0 ? "Add color masks" : $"{MaskFiles.Count} color masks")</span><small>PNG · masks/color/</small></label> }</article>
                 </div>
                 @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="status-message @(HasError ? "error" : "")"><i class="bi @(HasError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @StatusMessage</div> }
                 <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "Local + Gemini review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.") Số lượng candidate có thể khác giữa máy do model/weights local khác nhau.</small></span></div><button class="primary-button" disabled="@(LabelsJson is null || string.IsNullOrWhiteSpace(GuidelineText) || IsBusy)" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
                 <div class="setup-card" style="margin-top:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
-                    <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@(!GeminiConfigured || IsBusy)" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">@(GeminiConfigured ? "Đã có key: Gemini được chọn sẵn cho lần chạy; bỏ chọn nếu muốn local-only." : "Chưa có API key nên pipeline chỉ chạy local.") Model: @GeminiModel · Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
+                    <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@IsBusy" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">Tự động sử dụng Gemini API Key đã cấu hình trong hệ thống (Model: @GeminiModel). Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
                     <label style="margin:0;max-width:180px">Số frame tối đa<input type="number" min="1" max="50" @bind="GeminiFrameLimit" disabled="@(!UseGemini || IsBusy)" /></label>
-                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="text-button">Lấy Gemini API key <i class="bi bi-box-arrow-up-right"></i></a>
                 </div>
             }
             else if (Step == 1)
@@ -693,10 +672,6 @@
     private bool UseGemini;
     private bool GeminiConfigured;
     private string GeminiModel = "gemini-3.8-flash";
-    private string GeminiApiKey = "";
-    private string? GeminiConfigMessage;
-    private bool GeminiConfigHasError;
-    private bool IsGeminiConfigSaving;
     private int GeminiFrameLimit = 10;
     private string? CvatJobResultUrl;
     private string? CvatOperationMessage;
@@ -1377,12 +1352,38 @@
             HasError = true;
         }
     }
+    private async Task OnCvatKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SaveCvatConfig();
+        }
+    }
+
     private async Task SaveCvatConfig()
     {
         if (IsCvatConfigSaving) return;
-        IsCvatConfigSaving = true;
         CvatConfigMessage = null;
         CvatConfigHasError = false;
+
+        CvatUrl = (CvatUrl ?? "").Trim();
+        CvatAccessToken = (CvatAccessToken ?? "").Trim();
+
+        if (string.IsNullOrWhiteSpace(CvatUrl))
+        {
+            CvatConfigMessage = "Vui lòng nhập hoặc chọn CVAT_URL (ví dụ: https://app.cvat.ai)";
+            CvatConfigHasError = true;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(CvatAccessToken) && string.IsNullOrWhiteSpace(CvatActiveToken))
+        {
+            CvatConfigMessage = "Vui lòng dán Personal Access Token từ CVAT vào ô bên trên.";
+            CvatConfigHasError = true;
+            return;
+        }
+
+        IsCvatConfigSaving = true;
 
         // Auto-detect if user pasted a full CVAT Job URL (e.g. https://app.cvat.ai/tasks/12/jobs/34)
         if (!string.IsNullOrWhiteSpace(CvatUrl))
@@ -1398,8 +1399,9 @@
             }
             else if (CvatUrl.EndsWith("/api", StringComparison.OrdinalIgnoreCase))
             {
-                CvatUrl = CvatUrl[..^4].TrimEnd('/');
+                CvatUrl = CvatUrl[..^4];
             }
+            CvatUrl = CvatUrl.TrimEnd('/');
         }
 
         if (!string.IsNullOrWhiteSpace(CvatAccessToken))
@@ -1407,12 +1409,14 @@
             CvatActiveToken = CvatAccessToken.Trim();
         }
 
+        var tokenToSend = !string.IsNullOrWhiteSpace(CvatAccessToken) ? CvatAccessToken : CvatActiveToken;
+
         try
         {
             using var response = await Api.PostAsJsonAsync("/api/cvat/config", new
             {
                 cvat_url = CvatUrl,
-                cvat_access_token = CvatAccessToken
+                cvat_access_token = tokenToSend
             });
 
             if (!response.IsSuccessStatusCode)
@@ -1534,50 +1538,6 @@
         finally
         {
             IsBusy = false;
-        }
-    }
-    private async Task SaveGeminiConfig()
-    {
-        if (IsGeminiConfigSaving || string.IsNullOrWhiteSpace(GeminiApiKey)) return;
-        IsGeminiConfigSaving = true;
-        GeminiConfigMessage = null;
-        GeminiConfigHasError = false;
-        try
-        {
-            using var response = await Api.PostAsJsonAsync("/api/gemini/config", new { api_key = GeminiApiKey });
-            if (!response.IsSuccessStatusCode)
-            {
-                var responseText = await response.Content.ReadAsStringAsync();
-                var detail = responseText;
-                try
-                {
-                    using var error = JsonDocument.Parse(responseText);
-                    detail = GetString(error.RootElement, "detail", responseText);
-                }
-                catch (JsonException) { }
-                GeminiConfigMessage = $"Could not save Gemini key: {detail}";
-                GeminiConfigHasError = true;
-                return;
-            }
-
-            GeminiApiKey = "";
-            GeminiConfigured = true;
-            UseGemini = true;
-            GeminiConfigMessage = "Gemini key saved to the backend .env. Gemini is enabled for this browser session.";
-        }
-        catch (HttpRequestException)
-        {
-            GeminiConfigMessage = "Could not reach the QC backend. Gemini key was not saved.";
-            GeminiConfigHasError = true;
-        }
-        catch (TaskCanceledException)
-        {
-            GeminiConfigMessage = "Saving Gemini key timed out. Check the QC backend and try again.";
-            GeminiConfigHasError = true;
-        }
-        finally
-        {
-            IsGeminiConfigSaving = false;
         }
     }
     private async Task LoadCvatFrameMap()
