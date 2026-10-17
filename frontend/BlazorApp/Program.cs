@@ -1,6 +1,7 @@
 using BlazorApp.Components;
 using MudBlazor.Services;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 var customPort = Environment.GetEnvironmentVariable("PORT");
@@ -11,6 +12,9 @@ if (!string.IsNullOrEmpty(customPort))
 StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
 
 // Add services to the container.
+builder.Services.AddDataProtection()
+    .SetApplicationName("QCStudio2D");
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
