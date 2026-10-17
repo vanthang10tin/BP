@@ -19,4 +19,7 @@ venv
 *.onnx
 *.weights
 *.safetensors
+*KEY*.txt
+GEMINI_API_KEY.txt
+backend/GEMINI_API_KEY.txt
 
