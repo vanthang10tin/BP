@@ -18,11 +18,12 @@ RUN dotnet publish frontend/BlazorApp/BlazorApp.csproj -c Release -o /app/blazor
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-# Install Python 3, pip, curl
+# Install Python 3, pip, curl, ca-certificates
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python requirements
@@ -36,7 +37,7 @@ COPY --from=blazor-build /app/blazor ./blazor/
 
 # Environment settings
 ENV PORT=5000
-ENV QC_PUBLIC_DEMO=true
+ENV QC_PUBLIC_DEMO=false
 ENV QcApi__BaseUrl=http://127.0.0.1:8000
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV PYTHONUNBUFFERED=1

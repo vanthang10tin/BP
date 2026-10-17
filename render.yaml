@@ -7,6 +7,7 @@ services:
     healthCheckPath: /
     envVars:
       - key: QC_PUBLIC_DEMO
-        value: "true"
+        value: "false"
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
+

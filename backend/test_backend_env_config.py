@@ -44,6 +44,22 @@ class BackendEnvConfigTests(unittest.TestCase):
                 with open(env_path, "r", encoding="utf-8") as env_file:
                     self.assertEqual(env_file.read(), "OTHER_SETTING=preserved\n")
 
+    def test_cvat_url_strips_api_suffix_and_normalizes(self):
+        with patch.dict(os.environ, {"CVAT_URL": "https://app.cvat.ai/api/", "CVAT_ACCESS_TOKEN": "pat-123"}):
+            self.assertEqual(app.get_cvat_config(), ("https://app.cvat.ai", "pat-123"))
+
+    def test_request_headers_override_cvat_config(self):
+        class DummyRequest:
+            headers = {"x-cvat-url": "https://app.cvat.ai/api", "x-cvat-token": "custom-pat"}
+
+        self.assertEqual(app.get_cvat_config(DummyRequest()), ("https://app.cvat.ai", "custom-pat"))
+
+    def test_cvat_headers_include_user_agent_and_flexible_accept(self):
+        headers = app.get_cvat_headers("pat-123")
+        self.assertIn("application/json", headers["Accept"])
+        self.assertIn("QC-Studio-2D", headers["User-Agent"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

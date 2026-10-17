@@ -93,12 +93,23 @@ load_env_file()
 def public_demo_enabled() -> bool:
     return os.environ.get("QC_PUBLIC_DEMO", "false").strip().lower() in {"1", "true", "yes"}
 
-def get_cvat_config() -> tuple[str, str]:
+def get_cvat_config(request: Any = None) -> tuple[str, str]:
+    if request is not None and hasattr(request, "headers"):
+        header_url = request.headers.get("x-cvat-url", "").strip()
+        header_token = request.headers.get("x-cvat-token", "").strip()
+        if header_url and header_token:
+            normalized_url = header_url.rstrip("/")
+            if normalized_url.endswith("/api"):
+                normalized_url = normalized_url[:-4].rstrip("/")
+            return normalized_url, header_token
+
     # Public demo instances must never use shared CVAT credentials, even if
     # they were accidentally added to the hosting environment.
     if public_demo_enabled():
         return "", ""
     base_url = os.environ.get("CVAT_URL", "http://127.0.0.1:8080").rstrip("/")
+    if base_url.endswith("/api"):
+        base_url = base_url[:-4].rstrip("/")
     parsed_url = urlparse(base_url)
     if parsed_url.hostname in {"127.0.0.1", "::1"}:
         port = f":{parsed_url.port}" if parsed_url.port else ""
@@ -148,6 +159,8 @@ def save_backend_env_values(values: dict[str, str]) -> None:
 
 def save_cvat_config(base_url: str, token: str) -> None:
     normalized_url = base_url.strip().rstrip("/")
+    if normalized_url.endswith("/api"):
+        normalized_url = normalized_url[:-4].rstrip("/")
     clean_token = token.strip()
     parsed_url = urlparse(normalized_url)
     try:
@@ -189,8 +202,10 @@ def get_cvat_headers(token: str) -> dict:
         clean_token = clean_token[7:].strip()
     return {
         "Authorization": f"Bearer {clean_token}",
-        "Accept": "application/vnd.cvat+json"
+        "Accept": "application/json, application/vnd.cvat+json, */*",
+        "User-Agent": "QC-Studio-2D/2.0 (CVAT-Client)"
     }
+
 
 
 def get_default_or_saved_config() -> Dict[str, Any]:
@@ -895,10 +910,18 @@ try:
     @fastapi_app.post("/api/cvat/push-issues")
     async def push_issues_to_cvat(request: Request):
         """Create frame-mapped CVAT issues and optionally return the job (update stage/state)."""
-        base_url, token = get_cvat_config()
-        if not base_url or not token:
-            raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình. Thiết lập CVAT_URL và CVAT_ACCESS_TOKEN ở backend.")
         payload = await request.json()
+        custom_url = payload.get("cvat_url") if isinstance(payload, dict) else None
+        custom_token = payload.get("cvat_access_token") if isinstance(payload, dict) else None
+        if custom_url and custom_token:
+            base_url = str(custom_url).rstrip("/")
+            if base_url.endswith("/api"):
+                base_url = base_url[:-4].rstrip("/")
+            token = str(custom_token).strip()
+        else:
+            base_url, token = get_cvat_config(request)
+        if not base_url or not token:
+            raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình. Thiết lập CVAT_URL và CVAT_ACCESS_TOKEN ở backend hoặc client.")
         try:
             job_id = int(payload.get("job_id"))
             frame_offset = int(payload.get("frame_offset", 0))
@@ -1149,11 +1172,11 @@ try:
         }
 
     @fastapi_app.get("/api/cvat/jobs")
-    async def cvat_list_jobs():
+    async def cvat_list_jobs(request: Request):
         """Retrieve recent active jobs from CVAT for 1-click selection."""
-        base_url, token = get_cvat_config()
+        base_url, token = get_cvat_config(request)
         if not base_url or not token:
-            raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình. Thiết lập CVAT_URL và CVAT_ACCESS_TOKEN.")
+            raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình. Thiết lập CVAT_URL và CVAT_ACCESS_TOKEN ở backend hoặc client.")
         headers = get_cvat_headers(token)
         try:
             req = urllib.request.Request(f"{base_url}/api/jobs?page_size=50", headers=headers)
@@ -1163,31 +1186,50 @@ try:
             for j in data.get("results", []):
                 t_id = j.get("task_id")
                 j_id = j.get("id")
+                frame_cnt = j.get("frame_count")
+                if frame_cnt is None and j.get("stop_frame") is not None and j.get("start_frame") is not None:
+                    frame_cnt = j.get("stop_frame", 0) - j.get("start_frame", 0) + 1
                 results.append({
                     "id": j_id,
                     "task_id": t_id,
                     "task_name": j.get("task_name") or f"Task #{t_id}",
                     "stage": j.get("stage"),
                     "state": j.get("state"),
-                    "frame_count": j.get("frame_count"),
+                    "frame_count": frame_cnt or 0,
                     "mode": j.get("mode"),
                     "url": f"{base_url}/tasks/{t_id}/jobs/{j_id}" if t_id else f"{base_url}/jobs/{j_id}"
                 })
             return {"status": "success", "jobs": results, "count": len(results)}
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:400]
+            raise HTTPException(status_code=502, detail=f"Lỗi từ CVAT ({exc.code}): {detail}")
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Không lấy được danh sách job từ CVAT: {exc}")
 
     @fastapi_app.get("/api/cvat/status")
-    async def cvat_status():
-        base_url, token = get_cvat_config()
+    async def cvat_status(request: Request):
+        base_url, token = get_cvat_config(request)
         if not base_url or not token:
-            return {"configured": False, "reachable": False, "detail": "Set CVAT_URL and CVAT_ACCESS_TOKEN in the backend process environment."}
+            return {"configured": False, "reachable": False, "detail": "Set CVAT_URL and CVAT_ACCESS_TOKEN in the backend process environment or pass X-CVAT-Url / X-CVAT-Token."}
         headers = get_cvat_headers(token)
         req = urllib.request.Request(f"{base_url}/api/server/about", headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 info = json.loads(response.read().decode("utf-8"))
-            return {"configured": True, "reachable": True, "version": info.get("version"), "name": info.get("name"), "url": base_url}
+
+            username = None
+            try:
+                user_req = urllib.request.Request(f"{base_url}/api/users/self", headers=headers)
+                with urllib.request.urlopen(user_req, timeout=10) as u_res:
+                    u_info = json.loads(u_res.read().decode("utf-8"))
+                    username = u_info.get("username")
+            except Exception:
+                pass
+
+            return {"configured": True, "reachable": True, "version": info.get("version"), "name": info.get("name"), "url": base_url, "username": username}
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:400]
+            return {"configured": True, "reachable": False, "detail": f"CVAT HTTP Error {exc.code}: {detail}"}
         except Exception as exc:
             return {"configured": True, "reachable": False, "detail": str(exc)[:400]}
 
@@ -1212,8 +1254,8 @@ try:
         return {"status": "success", "configured": True}
 
     @fastapi_app.get("/api/cvat/jobs/{job_id}/frame-map")
-    async def cvat_job_frame_map(job_id: int):
-        base_url, token = get_cvat_config()
+    async def cvat_job_frame_map(job_id: int, request: Request):
+        base_url, token = get_cvat_config(request)
         if not base_url or not token:
             raise HTTPException(status_code=503, detail="CVAT backend credentials are not configured")
         headers = get_cvat_headers(token)
@@ -1239,7 +1281,7 @@ try:
     @fastapi_app.post("/api/cvat/issues/{issue_id}/resolve")
     async def cvat_resolve_issue(issue_id: int, request: Request):
         """Allow reviewer to resolve or reopen an annotator issue directly on CVAT."""
-        base_url, token = get_cvat_config()
+        base_url, token = get_cvat_config(request)
         if not base_url or not token:
             raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình.")
         headers = get_cvat_headers(token)
@@ -1262,16 +1304,22 @@ try:
     @fastapi_app.post("/api/cvat/jobs/{job_id}/pull")
     async def cvat_pull_job(job_id: int, request: Request = None):
         """Pull annotations, frame metadata, and frame images directly from a CVAT job for 1-click review."""
-        base_url, token = get_cvat_config()
-        if not base_url or not token:
-            raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình. Thiết lập CVAT_URL và CVAT_ACCESS_TOKEN ở backend.")
-        headers = get_cvat_headers(token)
         payload = {}
         if request:
             try:
                 payload = await request.json()
             except Exception:
                 payload = {}
+        if payload.get("cvat_url") and payload.get("cvat_access_token"):
+            base_url = str(payload["cvat_url"]).rstrip("/")
+            if base_url.endswith("/api"):
+                base_url = base_url[:-4].rstrip("/")
+            token = str(payload["cvat_access_token"]).strip()
+        else:
+            base_url, token = get_cvat_config(request)
+        if not base_url or not token:
+            raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình. Thiết lập CVAT_URL và CVAT_ACCESS_TOKEN ở backend hoặc client.")
+        headers = get_cvat_headers(token)
         download_images = payload.get("download_images", True)
         max_frames = int(payload.get("max_frames", 100))
 
@@ -1284,10 +1332,20 @@ try:
             task_name = job_info.get("task_name") or f"Task #{task_id}"
 
             # 2. Labels for this task
-            labels_req = urllib.request.Request(f"{base_url}/api/labels?task_id={task_id}", headers=headers)
-            with urllib.request.urlopen(labels_req, timeout=15) as res:
-                labels_data = json.loads(res.read().decode("utf-8"))
-            label_map = {l["id"]: l["name"] for l in labels_data.get("results", []) if isinstance(l, dict) and "id" in l}
+            label_map = {}
+            try:
+                labels_req = urllib.request.Request(f"{base_url}/api/labels?task_id={task_id}&page_size=500", headers=headers)
+                with urllib.request.urlopen(labels_req, timeout=15) as res:
+                    labels_data = json.loads(res.read().decode("utf-8"))
+                label_map = {l["id"]: l["name"] for l in labels_data.get("results", []) if isinstance(l, dict) and "id" in l}
+            except Exception:
+                try:
+                    task_req = urllib.request.Request(f"{base_url}/api/tasks/{task_id}", headers=headers)
+                    with urllib.request.urlopen(task_req, timeout=15) as res:
+                        task_data = json.loads(res.read().decode("utf-8"))
+                    label_map = {l["id"]: l["name"] for l in task_data.get("labels", []) if isinstance(l, dict) and "id" in l}
+                except Exception:
+                    label_map = {}
 
             # 3. Frame metadata
             meta_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}/data/meta", headers=headers)
