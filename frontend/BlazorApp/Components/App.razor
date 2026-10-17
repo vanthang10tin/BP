@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["BlazorApp.styles.css"]" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
+    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <ReconnectModal />
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="@Assets[key: "_framework/blazor.web.js"]"></script>
+    <script>
+        window.qcDownload = (name, type, base64) => {
+            const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(new Blob([bytes], { type }));
+            link.download = name;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        };
+
+        window.toggleFullscreen = (selector) => {
+            const el = document.querySelector(selector) || document.documentElement;
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                if (el.requestFullscreen) {
+                    el.requestFullscreen().catch(err => {
+                        console.warn("Fullscreen request error:", err);
+                        el.classList.add('is-fullscreen');
+                    });
+                } else if (el.webkitRequestFullscreen) {
+                    el.webkitRequestFullscreen();
+                } else {
+                    el.classList.add('is-fullscreen');
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+                el.classList.remove('is-fullscreen');
+            }
+        };
+
+        document.addEventListener('fullscreenchange', () => {
+            const panel = document.querySelector('.canvas-panel');
+            if (panel) {
+                if (document.fullscreenElement) {
+                    panel.classList.add('is-fullscreen');
+                } else {
+                    panel.classList.remove('is-fullscreen');
+                }
+            }
+        });
+
+        window.qcStudioInterop = {
+            scrollToIssueCard: function (cardId) {
+                let el = document.getElementById(cardId);
+                if (!el) {
+                    // Try by attribute if ID isn't exact
+                    const rawId = cardId.replace(/^issue-card-/, '');
+                    el = document.querySelector(`[data-issue-id="${rawId}"]`) || document.querySelector(`[data-issue-id*="${rawId}"]`);
+                }
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.classList.add('flash-highlight');
+                    setTimeout(() => el.classList.remove('flash-highlight'), 1500);
+                }
+            },
+            spotlightCanvasBox: function (x, y, w, h) {
+                const wrapper = document.querySelector('.image-wrapper') || document.querySelector('.canvas-viewport');
+                if (wrapper) {
+                    const svg = wrapper.querySelector('svg.annotation-overlay');
+                    if (svg && svg.viewBox && svg.viewBox.baseVal) {
+                        const vb = svg.viewBox.baseVal;
+                        if (vb.width > 0 && vb.height > 0) {
+                            const cx = (x + w / 2) / vb.width;
+                            const cy = (y + h / 2) / vb.height;
+                            const scrollX = cx * wrapper.scrollWidth - wrapper.clientWidth / 2;
+                            const scrollY = cy * wrapper.scrollHeight - wrapper.clientHeight / 2;
+                            if (wrapper.scrollWidth > wrapper.clientWidth || wrapper.scrollHeight > wrapper.clientHeight) {
+                                wrapper.scrollTo({ left: Math.max(0, scrollX), top: Math.max(0, scrollY), behavior: 'smooth' });
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+</body>
+
+</html>

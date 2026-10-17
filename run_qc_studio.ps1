@@ -6,31 +6,30 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = $PSScriptRoot
-$appRoot = Join-Path $repoRoot 'source-tool/qc-bdd100k'
-$frontendRoot = Join-Path $appRoot 'frontend/BlazorApp'
-$runtimeDir = Join-Path $appRoot '.qc-data/runtime'
+$appRoot = $repoRoot
+$frontendRoot = Join-Path $repoRoot 'frontend\BlazorApp'
+$runtimeDir = Join-Path $repoRoot '.qc-data\runtime'
 $backendPidFile = Join-Path $runtimeDir 'backend.pid'
 $frontendPidFile = Join-Path $runtimeDir 'frontend.pid'
 $backendLog = Join-Path $runtimeDir 'backend.log'
 $backendErrorLog = Join-Path $runtimeDir 'backend-error.log'
 $frontendLog = Join-Path $runtimeDir 'frontend.log'
-$dotnetHome = Join-Path $repoRoot '.tools/dotnet-home'
-$nugetPackages = Join-Path $repoRoot '.tools/nuget-packages'
-$appData = Join-Path $repoRoot '.tools/appdata'
 $apiUrl = 'http://127.0.0.1:8000'
 $uiUrl = 'http://127.0.0.1:5000'
 
 function Test-Http([string]$Url) {
-    try { Invoke-WebRequest -Uri $Url -TimeoutSec 2 -UseBasicParsing | Out-Null; return $true }
-    catch { return $false }
+    try {
+        Invoke-WebRequest -Uri $Url -TimeoutSec 2 -UseBasicParsing | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 function Resolve-Dotnet {
-    $local = Join-Path $repoRoot '.tools/dotnet/dotnet.exe'
-    if (Test-Path -LiteralPath $local) { return $local }
     $command = Get-Command dotnet -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
-    throw 'Could not find .NET 10 SDK. Install it or place the portable SDK in .tools/dotnet.'
+    throw 'Could not find .NET SDK. Please install .NET 10 SDK and add it to PATH.'
 }
 
 function Resolve-Python {
@@ -50,17 +49,9 @@ function Resolve-Python {
 }
 
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
-New-Item -ItemType Directory -Path $dotnetHome, $nugetPackages, (Join-Path $appData 'NuGet') -Force | Out-Null
-$env:DOTNET_CLI_HOME = $dotnetHome
-$env:NUGET_PACKAGES = $nugetPackages
-$env:APPDATA = $appData
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
-$repoNugetConfig = Join-Path $repoRoot '.tools/NuGet.Config'
-if (Test-Path -LiteralPath $repoNugetConfig) {
-    Copy-Item -LiteralPath $repoNugetConfig -Destination (Join-Path $appData 'NuGet/NuGet.Config') -Force
-}
 
 $envPath = Join-Path $repoRoot '.env'
 if (Test-Path -LiteralPath $envPath) {
@@ -86,7 +77,7 @@ $dotnet = Resolve-Dotnet
 if (-not $SkipDependencyCheck) {
     & $pythonInfo.File @($pythonInfo.Prefix) -c 'import fastapi, uvicorn, PIL, numpy, shapely' 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw 'Missing Python packages. Run: python -m pip install -r source-tool/qc-bdd100k/requirements.txt'
+        throw 'Missing Python packages. Run: python -m pip install -r requirements.txt'
     }
 }
 
@@ -134,19 +125,19 @@ if (-not (Test-Http $uiUrl)) {
     }
     $env:QcApi__BaseUrl = $apiUrl
     $projectFile = Join-Path $frontendRoot 'BlazorApp.csproj'
-    if (Test-Path -LiteralPath $repoNugetConfig) {
-        & $dotnet restore $projectFile --configfile $repoNugetConfig *> $frontendLog
-    } else {
-        & $dotnet restore $projectFile *> $frontendLog
-    }
+    & $dotnet restore $projectFile *> $frontendLog
     if ($LASTEXITCODE -ne 0) { throw "Frontend package restore failed. Inspect log: $frontendLog" }
     & $dotnet build $projectFile --configuration Release --no-restore *>> $frontendLog
     if ($LASTEXITCODE -ne 0) { throw "Frontend build failed. Inspect log: $frontendLog" }
-    # `dotnet run` configures the Static Web Assets manifest; invoking the DLL
-    # directly serves HTML but misses CSS/JS assets in a build (non-publish) output.
+
     $emptyIn = Join-Path $runtimeDir 'empty.in'
     if (-not (Test-Path -LiteralPath $emptyIn)) { Set-Content -LiteralPath $emptyIn -Value '' -NoNewline }
-    $frontend = Start-Process -FilePath $dotnet -ArgumentList @('run', '--no-build', '--no-launch-profile', '--project', 'BlazorApp.csproj', '--environment', 'Development', '--configuration', 'Release', '--urls', $uiUrl) -WorkingDirectory $frontendRoot -PassThru -RedirectStandardInput $emptyIn -RedirectStandardOutput (Join-Path $runtimeDir 'frontend-server.log') -RedirectStandardError (Join-Path $runtimeDir 'frontend-error.log') -WindowStyle Hidden
+    $releaseExe = Join-Path $frontendRoot 'bin\Release\net10.0\BlazorApp.exe'
+    if (Test-Path -LiteralPath $releaseExe) {
+        $frontend = Start-Process -FilePath $releaseExe -ArgumentList @('--environment', 'Development', '--urls', $uiUrl) -WorkingDirectory $frontendRoot -PassThru -RedirectStandardOutput (Join-Path $runtimeDir 'frontend-server.log') -RedirectStandardError (Join-Path $runtimeDir 'frontend-error.log') -WindowStyle Hidden
+    } else {
+        $frontend = Start-Process -FilePath $dotnet -ArgumentList @('run', '--no-build', '--no-launch-profile', '--project', 'BlazorApp.csproj', '--environment', 'Development', '--configuration', 'Release', '--urls', $uiUrl) -WorkingDirectory $frontendRoot -PassThru -RedirectStandardOutput (Join-Path $runtimeDir 'frontend-server.log') -RedirectStandardError (Join-Path $runtimeDir 'frontend-error.log') -WindowStyle Hidden
+    }
     $deadline = (Get-Date).AddSeconds(90)
     while ((Get-Date) -lt $deadline -and -not (Test-Http $uiUrl)) {
         Start-Sleep -Milliseconds 500
@@ -157,13 +148,16 @@ if (-not (Test-Http $uiUrl)) {
     Set-Content -LiteralPath $frontendPidFile -Value $actualPid -NoNewline
 }
 
-Write-Host "QC Studio is ready: $uiUrl" -ForegroundColor Green
-Write-Host "API: $apiUrl | CVAT (if its gateway is running): http://127.0.0.1:8080"
-Write-Host "Logs: $runtimeDir"
+Write-Host "========================================================" -ForegroundColor Cyan
+Write-Host "  QC STUDIO BLAZOR APP DANG CHAY TAI: $uiUrl" -ForegroundColor Green
+Write-Host "  Backend API: $apiUrl" -ForegroundColor Yellow
+Write-Host "  Thu muc Runtime: $runtimeDir" -ForegroundColor Cyan
+Write-Host "========================================================" -ForegroundColor Cyan
+
 if (-not $NoBrowser) { Start-Process $uiUrl }
 
 if ($Wait) {
-    Write-Host "Services are running. Press Ctrl+C to stop."
+    Write-Host 'Services are running. Press Ctrl+C to stop.'
     try {
         while ($true) { Start-Sleep -Seconds 3600 }
     } finally {
