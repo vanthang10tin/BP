@@ -33,6 +33,7 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages -r requirement
 # Copy backend, demo data, and published Blazor app
 COPY backend/ ./backend/
 COPY demo_data/ ./demo_data/
+COPY DEMO_PACK/ ./DEMO_PACK/
 COPY --from=blazor-build /app/blazor ./blazor/
 
 # Environment settings

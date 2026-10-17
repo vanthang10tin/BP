@@ -138,10 +138,7 @@
                         }
                         <div class="cvat-config-footer">
                             <button type="button" class="outline-button" disabled="@IsBusy" @onclick="LoadCvatJobs"><i class="bi bi-arrow-clockwise"></i> Refresh jobs</button>
-                            @if (CvatJobId > 0)
-                            {
-                                <button type="button" class="primary-button" disabled="@IsBusy" @onclick="PullJobFromCvat" style="background:#059669;border-color:#059669"><i class="bi bi-cloud-arrow-down"></i> Tải Dataset từ CVAT Job</button>
-                            }
+                            <button type="button" class="primary-button" disabled="@IsBusy" @onclick="PullJobFromCvat" style="background:#059669;border-color:#059669"><i class="bi bi-cloud-arrow-down"></i> Tải Dataset từ CVAT Job</button>
                             @if (CvatSelectedJobUrl is not null)
                             {
                                 <a class="primary-button" href="@CvatSelectedJobUrl" target="_blank" rel="noopener noreferrer"><i class="bi bi-arrow-right"></i> Mở trên CVAT</a>
@@ -151,7 +148,7 @@
                     <article class="setup-card image-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-images"></i></span><span class="card-kicker">@(Mode == "segmentation" ? "REQUIRED IMAGE + MASK PAIR" : "IMAGE INPUT")</span></div><h2>Frame images & masks</h2><p>@(Mode == "segmentation" ? "Attach JPGs, train-ID masks for metric comparison, and color masks for display." : "Attach matching images for local model inference. BDD100K archive lookup is a fallback.")</p><label class="compact-upload" for="images-file"><InputFile id="images-file" OnChange="OnImagesSelected" accept="image/*" multiple /><i class="bi bi-plus-lg"></i><span>@(ImageFiles.Count == 0 ? "Add images" : $"{ImageFiles.Count} images attached")</span><small>match by filename</small></label>@if (Mode == "segmentation") { <label class="compact-upload mask-upload" for="index-masks-file"><InputFile id="index-masks-file" OnChange="OnIndexMasksSelected" accept="image/png" multiple /><i class="bi bi-grid-3x3"></i><span>@(IndexMaskFiles.Count == 0 ? "Add train-ID masks" : $"{IndexMaskFiles.Count} index masks")</span><small>PNG · masks/index/</small></label><label class="compact-upload mask-upload" for="masks-file"><InputFile id="masks-file" OnChange="OnMasksSelected" accept="image/png" multiple /><i class="bi bi-layers"></i><span>@(MaskFiles.Count == 0 ? "Add color masks" : $"{MaskFiles.Count} color masks")</span><small>PNG · masks/color/</small></label> }</article>
                 </div>
                 @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="status-message @(HasError ? "error" : "")"><i class="bi @(HasError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @StatusMessage</div> }
-                <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "Local + Gemini review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.") Số lượng candidate có thể khác giữa máy do model/weights local khác nhau.</small></span></div><button class="primary-button" disabled="@(LabelsJson is null || string.IsNullOrWhiteSpace(GuidelineText) || IsBusy)" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
+                <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "Local + Gemini review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.") Số lượng candidate có thể khác giữa máy do model/weights local khác nhau.</small></span></div><button class="primary-button" disabled="@IsBusy" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
                 <div class="setup-card" style="margin-top:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
                     <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@IsBusy" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">Tự động sử dụng Gemini API Key đã cấu hình trong hệ thống (Model: @GeminiModel). Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
                     <label style="margin:0;max-width:180px">Số frame tối đa<input type="number" min="1" max="50" @bind="GeminiFrameLimit" disabled="@(!UseGemini || IsBusy)" /></label>
@@ -214,7 +211,7 @@
                                 @if (Mode == "segmentation") {
                                     <div>
                                         <button class="layer-btn @(ShowModelMask ? "" : "active")" @onclick="() => ShowModelMask = false">Uploaded</button>
-                                        <button class="layer-btn @(ShowModelMask ? "active" : "")" disabled="@(SelectedFrame is null || !HasModelMask(SelectedFrame.Value))" @onclick="() => ShowModelMask = true">Local model</button>
+                                        <button class="layer-btn @(ShowModelMask ? "active" : "")" @onclick="ToggleModelMask">Local model</button>
                                     </div>
                                 }
                             </div>
@@ -510,7 +507,7 @@
             <span>@(CvatMappingFileName ?? "Nạp file frame map tùy chỉnh")</span>
             <small>@(CvatFrameMap.Count > 0 ? $"{CvatFrameMap.Count} frames đã map" : "Tự động lấy từ metadata job")</small>
         </label>
-        <button class="outline-button" disabled="@(CvatJobId <= 0 || IsBusy)" @onclick="LoadCvatFrameMap">
+        <button class="outline-button" disabled="@IsBusy" @onclick="LoadCvatFrameMap">
             <i class="bi bi-arrow-repeat"></i> Nạp Frame Map từ CVAT
         </button>
         <button class="outline-button" disabled="@IsBusy" @onclick="LoadCvatJobs">
@@ -553,10 +550,10 @@
     }
 
     <div class="cvat-buttons">
-        <button class="primary-button btn-return-cvat" disabled="@(CvatJobId <= 0 || CvatPushIssueCount == 0 || (CvatFrameMap.Count == 0 && !ConfirmOffsetMapping) || IsBusy)" @onclick="() => PushCvatIssues(true)">
+        <button class="primary-button btn-return-cvat" disabled="@IsBusy" @onclick="() => PushCvatIssues(true)">
             <i class="bi bi-arrow-return-left"></i> ⚡ @(UpdateJobStateOnReturn ? "TRẢ JOB" : "ĐẨY ISSUES") #@CvatJobId @(UpdateJobStateOnReturn ? "VỀ CVAT KÈM ISSUES" : "LÊN CVAT") (@CvatPushIssueCount issues)
         </button>
-        <button class="outline-button" disabled="@(CvatJobId <= 0 || CvatPushIssueCount == 0 || (CvatFrameMap.Count == 0 && !ConfirmOffsetMapping) || IsBusy)" @onclick="() => PushCvatIssues(false)">
+        <button class="outline-button" disabled="@IsBusy" @onclick="() => PushCvatIssues(false)">
             <i class="bi bi-send"></i> Chỉ đẩy Issues (Giữ nguyên trạng thái Job) (@CvatPushIssueCount)
         </button>
     </div>
@@ -921,16 +918,35 @@
             StateHasChanged();
 
             string? demoDir = null;
-            var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-            while (dir != null)
+            var subFolder = Mode == "segmentation" ? "SEGMENTATION" : "BBOX";
+            var searchCandidates = new List<string>
             {
-                var candidate = Path.Combine(dir.FullName, "DEMO_PACK", Mode == "segmentation" ? "SEGMENTATION" : "BBOX");
+                Path.Combine(Directory.GetCurrentDirectory(), "DEMO_PACK", subFolder),
+                Path.Combine(AppContext.BaseDirectory, "DEMO_PACK", subFolder),
+                Path.Combine("/app", "DEMO_PACK", subFolder)
+            };
+
+            var cur = new DirectoryInfo(Directory.GetCurrentDirectory());
+            while (cur != null)
+            {
+                searchCandidates.Add(Path.Combine(cur.FullName, "DEMO_PACK", subFolder));
+                cur = cur.Parent;
+            }
+
+            var baseDir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (baseDir != null)
+            {
+                searchCandidates.Add(Path.Combine(baseDir.FullName, "DEMO_PACK", subFolder));
+                baseDir = baseDir.Parent;
+            }
+
+            foreach (var candidate in searchCandidates)
+            {
                 if (Directory.Exists(candidate))
                 {
                     demoDir = candidate;
                     break;
                 }
-                dir = dir.Parent;
             }
 
             if (demoDir == null)
@@ -1028,7 +1044,18 @@
     }
     private async Task RunQc()
     {
-        if (LabelsJson is null) return;
+        if (LabelsJson is null)
+        {
+            StatusMessage = "⚠️ Vui lòng tải lên tệp nhãn (Labels JSON) hoặc bấm 'Nạp bộ test 50 ảnh' ở phía trên để bắt đầu.";
+            HasError = true;
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(GuidelineText))
+        {
+            StatusMessage = "⚠️ Guideline đang trống. Vui lòng nạp tệp guideline hoặc bấm 'Nạp bộ test 50 ảnh' để nạp guideline mẫu.";
+            HasError = true;
+            return;
+        }
         IsBusy = true; HasError = false; StatusMessage = null;
         try
         {
@@ -1077,6 +1104,15 @@
         return MaskFiles.TryGetValue(GetString(frame, "mask_color", ""), out var data) ? data : null;
     }
     private static bool HasModelMask(JsonElement frame) => frame.TryGetProperty("prediction_mask_png_base64", out var predicted) && predicted.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(predicted.GetString());
+    private void ToggleModelMask()
+    {
+        if (SelectedFrame is null || !HasModelMask(SelectedFrame.Value))
+        {
+            StatusMessage = "Frame này không có mask từ model local.";
+            return;
+        }
+        ShowModelMask = true;
+    }
     private void ZoomIn() => ZoomLevel = Math.Min(3.0, Math.Round(ZoomLevel + 0.25, 2));
     private void ZoomOut() => ZoomLevel = Math.Max(0.5, Math.Round(ZoomLevel - 0.25, 2));
     private void FitView() => ZoomLevel = 1.0;
@@ -1325,6 +1361,12 @@
     }
     private async Task LoadCvatJobs()
     {
+        if (string.IsNullOrWhiteSpace(CvatAccessToken) && string.IsNullOrWhiteSpace(CvatActiveToken) && !CvatReachable)
+        {
+            StatusMessage = "Vui lòng nhập Token CVAT và bấm 'Connect & Save CVAT' trước khi tải danh sách Job.";
+            HasError = true;
+            return;
+        }
         try
         {
             using var req = CreateCvatRequest(HttpMethod.Get, "/api/cvat/jobs");
@@ -1478,7 +1520,7 @@
     {
         if (CvatJobId <= 0)
         {
-            StatusMessage = "Vui lòng chọn hoặc nhập Job ID trước khi nạp.";
+            StatusMessage = "⚠️ Vui lòng chọn một Job từ danh sách CVAT (hoặc kết nối CVAT) trước khi tải dataset.";
             HasError = true;
             return;
         }
@@ -1542,7 +1584,14 @@
     }
     private async Task LoadCvatFrameMap()
     {
-        if (CvatJobId <= 0) return;
+        if (CvatJobId <= 0)
+        {
+            StatusMessage = "⚠️ Vui lòng chọn hoặc nhập Job ID trước khi nạp Frame Map.";
+            CvatOperationMessage = "⚠️ Vui lòng chọn hoặc nhập Job ID trước khi nạp Frame Map.";
+            CvatOperationHasError = true;
+            HasError = true;
+            return;
+        }
         try
         {
             using var req = CreateCvatRequest(HttpMethod.Get, $"/api/cvat/jobs/{CvatJobId}/frame-map");
@@ -1563,9 +1612,9 @@
     }
     private async Task PushCvatIssues(bool returnJob = true)
     {
-        if (CvatJobId <= 0) { CvatOperationMessage = "Vui lòng chọn hoặc nhập CVAT Job ID."; CvatOperationHasError = true; return; }
-        if (CvatPushIssueCount == 0) { CvatOperationMessage = "Không có issue phù hợp để gửi lên CVAT. Hãy Confirm issue hoặc bật gửi candidate chưa duyệt."; CvatOperationHasError = true; return; }
-        if (CvatFrameMap.Count == 0 && !ConfirmOffsetMapping) { CvatOperationMessage = "Hãy nạp frame map từ đúng CVAT Job hoặc xác nhận rõ frame offset trước khi gửi."; CvatOperationHasError = true; return; }
+        if (CvatJobId <= 0) { CvatOperationMessage = "⚠️ Vui lòng chọn hoặc nhập CVAT Job ID."; CvatOperationHasError = true; return; }
+        if (CvatPushIssueCount == 0) { CvatOperationMessage = "⚠️ Không có issue phù hợp để gửi lên CVAT. Hãy Confirm issue trong bước Review hoặc bật 'Đẩy toàn bộ issue phát hiện'."; CvatOperationHasError = true; return; }
+        if (CvatFrameMap.Count == 0 && !ConfirmOffsetMapping) { CvatOperationMessage = "⚠️ Hãy nạp frame map từ CVAT Job hoặc tích chọn xác nhận frame offset trước khi gửi."; CvatOperationHasError = true; return; }
         IsBusy = true;
         CvatJobResultUrl = null;
         CvatOperationSucceeded = false;
