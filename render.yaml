@@ -10,4 +10,10 @@ services:
         value: "false"
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
+      - key: CVAT_URL
+        value: "https://app.cvat.ai"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CVAT_ACCESS_TOKEN
+        sync: false
 
