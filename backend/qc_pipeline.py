@@ -117,14 +117,6 @@ def normalize_bbox_dataset(data: Any, annotation_format: str, profile: dict[str,
 
 
 def _image_bytes(name: str, supplied: dict[str, str]) -> bytes | None:
-    try:
-        from app import find_image_file_path
-        path = find_image_file_path(name)
-        if path and os.path.exists(path):
-            return Path(path).read_bytes()
-    except Exception:
-        pass
-
     encoded = supplied.get(name)
     if encoded:
         if encoded.startswith("data:"):
@@ -133,6 +125,14 @@ def _image_bytes(name: str, supplied: dict[str, str]) -> bytes | None:
             return base64.b64decode(encoded, validate=True)
         except Exception as exc:
             raise ValueError(f"Invalid base64 image for {name}") from exc
+    # The uploaded image belongs to this run; a same-named demo image is only a fallback.
+    try:
+        from app import find_image_file_path
+        path = find_image_file_path(name)
+        if path and os.path.exists(path):
+            return Path(path).read_bytes()
+    except Exception:
+        pass
     return None
 
 
@@ -185,7 +185,8 @@ def _base_bbox_frames(frames: list[dict[str, Any]], profile: dict[str, Any], gui
     if is_bdd:
         from qc_engine import BDDQualityChecker
         results = BDDQualityChecker(guideline_manager=guideline_manager).check_dataset_advanced(frames)["sorted_frames"]
-        for output, source in zip(results, frames):
+        for output in results:
+            source = frames[output["frame_index"]]
             output["width"] = int(source.get("width", profile.get("image_width", 1280)))
             output["height"] = int(source.get("height", profile.get("image_height", 720)))
         return results

@@ -4,10 +4,10 @@ services:
     runtime: docker
     plan: free
     region: oregon
-    healthCheckPath: /
+    healthCheckPath: /healthz
     envVars:
       - key: QC_PUBLIC_DEMO
-        value: "false"
+        value: "true"
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
       - key: CVAT_URL

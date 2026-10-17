@@ -15,6 +15,7 @@
         <div class="topbar-right"><span class="avatar">VT</span><span class="user-label">Reviewer workspace</span></div>
     </header>
 
+    <div class="service-status" role="status">@(ApiOnline ? "QC API đã kết nối" : "Chưa kết nối được QC API") <button type="button" class="text-button" disabled="@IsConnecting" @onclick="RefreshServices">@(IsConnecting ? "Đang kiểm tra…" : "Kiểm tra kết nối")</button></div>
     <div class="app-frame">
         <aside class="right-rail" aria-label="Workspace navigation">
             <div class="rail-label">LABEL TYPE</div>
@@ -148,9 +149,9 @@
                     <article class="setup-card image-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-images"></i></span><span class="card-kicker">@(Mode == "segmentation" ? "REQUIRED IMAGE + MASK PAIR" : "IMAGE INPUT")</span></div><h2>Frame images & masks</h2><p>@(Mode == "segmentation" ? "Attach JPGs, train-ID masks for metric comparison, and color masks for display." : "Attach matching images for local model inference. BDD100K archive lookup is a fallback.")</p><label class="compact-upload" for="images-file"><InputFile id="images-file" OnChange="OnImagesSelected" accept="image/*" multiple /><i class="bi bi-plus-lg"></i><span>@(ImageFiles.Count == 0 ? "Add images" : $"{ImageFiles.Count} images attached")</span><small>match by filename</small></label>@if (Mode == "segmentation") { <label class="compact-upload mask-upload" for="index-masks-file"><InputFile id="index-masks-file" OnChange="OnIndexMasksSelected" accept="image/png" multiple /><i class="bi bi-grid-3x3"></i><span>@(IndexMaskFiles.Count == 0 ? "Add train-ID masks" : $"{IndexMaskFiles.Count} index masks")</span><small>PNG · masks/index/</small></label><label class="compact-upload mask-upload" for="masks-file"><InputFile id="masks-file" OnChange="OnMasksSelected" accept="image/png" multiple /><i class="bi bi-layers"></i><span>@(MaskFiles.Count == 0 ? "Add color masks" : $"{MaskFiles.Count} color masks")</span><small>PNG · masks/color/</small></label> }</article>
                 </div>
                 @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="status-message @(HasError ? "error" : "")"><i class="bi @(HasError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @StatusMessage</div> }
-                <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "Local + Gemini review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.") Số lượng candidate có thể khác giữa máy do model/weights local khác nhau.</small></span></div><button class="primary-button" disabled="@IsBusy" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
+                <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "QC + Gemini review" : ModelsMode == "remote" ? "Modal Cloud review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : ModelsMode == "remote" ? "Ảnh được gửi tới Modal Cloud đã cấu hình; Gemini không được gọi." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.") Số lượng candidate có thể khác giữa máy do model/weights local khác nhau.</small></span></div><button class="primary-button" disabled="@IsBusy" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : ModelsMode == "remote" ? "Run QC + Modal" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
                 <div class="setup-card" style="margin-top:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
-                    <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@IsBusy" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">Tự động sử dụng Gemini API Key đã cấu hình trong hệ thống (Model: @GeminiModel). Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
+                    <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@(IsBusy || !GeminiConfigured)" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">@(GeminiConfigured ? $"Chỉ gửi ảnh khi bạn bật tùy chọn này (Model: {GeminiModel})." : "Gemini chưa được cấu hình hoặc bị tắt trong chế độ public demo.") Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
                     <label style="margin:0;max-width:180px">Số frame tối đa<input type="number" min="1" max="50" @bind="GeminiFrameLimit" disabled="@(!UseGemini || IsBusy)" /></label>
                 </div>
             }
@@ -609,6 +610,7 @@
     private int Step;
     private bool IsBusy;
     private bool ApiOnline;
+    private bool IsConnecting;
     private string ModelsMode = "disabled";
     private bool HasError;
     private string? StatusMessage;
@@ -622,7 +624,7 @@
     private double ZoomLevel = 1.0;
     private bool IsFullscreen = false;
     private bool OnlyShowIssues = true;
-    private bool SwapHumanAndModel = true;
+    private bool SwapHumanAndModel = false;
     private bool ShowHumanBoxes = true;
     private bool ShowModelBoxes = true;
     private bool ShowIssueBoxes = true;
@@ -731,40 +733,54 @@
             return $"{GetString(provider, "name", id)} · {GetString(provider, "device", "device unknown")}";
         }
     }
-    private string ModelStatusText => ModelsMode == "local" ? SelectedModelText : ModelsMode == "simulated" ? "Simulated mode · demo only" : "Rules · local models unavailable";
+    private string ModelStatusText => ModelsMode is "local" or "remote" ? SelectedModelText : ModelsMode == "simulated" ? "Simulated mode · demo only" : "Rules · local models unavailable";
     private HttpClient Api => HttpFactory.CreateClient("qc");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (firstRender) await RefreshServices();
+    }
 
+    private async Task RefreshServices()
+    {
+        if (IsConnecting) return;
+        IsConnecting = true;
         try
         {
-            var health = await Api.GetFromJsonAsync<JsonElement>("/api/health");
-            ApiOnline = GetString(health, "status", "") == "ok";
-            ModelsMode = GetString(health, "models_mode", "disabled");
-        }
-        catch { ApiOnline = false; }
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var health = await Api.GetFromJsonAsync<JsonElement>("/api/health", timeout.Token);
+                ApiOnline = GetString(health, "status", "") == "ok";
+                ModelsMode = GetString(health, "models_mode", "disabled");
+            }
+            catch { ApiOnline = false; }
 
-        if (!ApiOnline)
-        {
+            if (!ApiOnline)
+            {
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var modelInfo = await Api.GetFromJsonAsync<JsonElement>("/api/models", timeout.Token);
+                ModelProviders = GetArray(modelInfo, "providers");
+                GeminiConfigured = GetBool(GetObject(modelInfo, "gemini"), "configured");
+                GeminiModel = GetString(GetObject(modelInfo, "gemini"), "model", GeminiModel);
+            }
+            catch { ModelProviders.Clear(); }
             await InvokeAsync(StateHasChanged);
-            return;
-        }
 
-        try
+            await RefreshCvatConnection();
+            await InvokeAsync(StateHasChanged);
+        }
+        finally
         {
-            var modelInfo = await Api.GetFromJsonAsync<JsonElement>("/api/models");
-            ModelProviders = GetArray(modelInfo, "providers");
-            GeminiConfigured = GetBool(GetObject(modelInfo, "gemini"), "configured");
-            GeminiModel = GetString(GetObject(modelInfo, "gemini"), "model", GeminiModel);
-            UseGemini = GeminiConfigured;
+            IsConnecting = false;
+            await InvokeAsync(StateHasChanged);
         }
-        catch { ModelProviders.Clear(); }
-        await InvokeAsync(StateHasChanged);
-
-        await RefreshCvatConnection();
-        await InvokeAsync(StateHasChanged);
     }
 
     private HttpRequestMessage CreateCvatRequest(HttpMethod method, string path, object? jsonBody = null)
@@ -828,6 +844,7 @@
 
     private void SetMode(string mode)
     {
+        if (IsBusy) return;
         if (Mode == mode) return;
         Mode = mode;
         LabelsJson = null; LabelFileName = null; ProfileJson = null; ProfileFileName = null; Frames.Clear(); SelectedFrame = null; SelectedFrameName = null;
@@ -845,7 +862,7 @@
         try
         {
             var file = e.File;
-            await using var stream = file.OpenReadStream(512 * 1024 * 1024);
+            await using var stream = file.OpenReadStream(32 * 1024 * 1024);
             using var doc = await JsonDocument.ParseAsync(stream);
             if (IsCvatLabelDefinition(doc.RootElement))
             {
@@ -895,7 +912,7 @@
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await response.Content.ReadAsStringAsync());
         }
     }
-    private async Task SaveGuidelineDraft(bool activate = false)
+    private async Task SaveGuidelineDraft(bool activate = false, bool throwOnFailure = false)
     {
         if (string.IsNullOrWhiteSpace(GuidelineText)) return;
         try
@@ -906,14 +923,19 @@
             using var doc = JsonDocument.Parse(body); var version = GetInt(doc.RootElement, "version", 0);
             StatusMessage = $"Đã lưu guideline workspace v{version} ({(activate ? "active for next run" : "draft; not applied to runs")})."; HasError = false; GuidelineOpen = false;
         }
-        catch (Exception ex) { StatusMessage = $"Không lưu được guideline: {ex.Message}"; HasError = true; }
+        catch (Exception ex) { StatusMessage = $"Không lưu được guideline: {ex.Message}"; HasError = true; if (throwOnFailure) throw; }
     }
 
     private async Task LoadQuickDemoPack()
     {
+        if (IsBusy) return;
         try
         {
             IsBusy = true;
+            WorkspaceId = null; ProfileJson = null; ProfileFileName = null;
+            LabelsJson = null; LabelFileName = null; GuidelineFileName = null; GuidelineText = "";
+            Frames.Clear(); SelectedFrame = null; SelectedFrameName = null; IssueDecisions.Clear();
+            ImageFiles.Clear(); MaskFiles.Clear(); IndexMaskFiles.Clear();
             StatusMessage = "Đang nạp nhanh bộ dữ liệu demo từ DEMO_PACK...";
             StateHasChanged();
 
@@ -956,6 +978,7 @@
 
             // 1. Labels
             var jsonPath = Path.Combine(demoDir, "annotations.json");
+            if (!File.Exists(jsonPath)) throw new FileNotFoundException("Thiếu annotations.json trong bộ demo.");
             if (File.Exists(jsonPath))
             {
                 var jsonBytes = await File.ReadAllBytesAsync(jsonPath);
@@ -967,14 +990,16 @@
 
             // 2. Guideline
             var guidePath = Path.Combine(demoDir, "guideline.md");
+            if (!File.Exists(guidePath)) throw new FileNotFoundException("Thiếu guideline.md trong bộ demo.");
             if (File.Exists(guidePath))
             {
                 GuidelineText = await File.ReadAllTextAsync(guidePath);
                 GuidelineFileName = "guideline.md (DEMO)";
-                await SaveGuidelineDraft(true);
+                await SaveGuidelineDraft(true, throwOnFailure: true);
             }
 
             // 3. Images
+            var demoNames = LabelsJson!.Value.EnumerateArray().Select(row => GetString(row, "name", "")).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var imgDir = Path.Combine(demoDir, "images");
             if (Directory.Exists(imgDir))
             {
@@ -982,6 +1007,7 @@
                 foreach (var imgFile in Directory.GetFiles(imgDir, "*.jpg"))
                 {
                     var fName = Path.GetFileName(imgFile);
+                    if (!demoNames.Contains(fName)) continue;
                     var b = await File.ReadAllBytesAsync(imgFile);
                     ImageFiles[fName] = $"data:image/jpeg;base64,{Convert.ToBase64String(b)}";
                 }
@@ -1029,21 +1055,60 @@
 
     private async Task OnImagesSelected(InputFileChangeEventArgs e)
     {
-        foreach (var file in e.GetMultipleFiles(200)) { await using var stream = file.OpenReadStream(20 * 1024 * 1024); using var ms = new MemoryStream(); await stream.CopyToAsync(ms); ImageFiles[file.Name] = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}"; }
-        StatusMessage = $"Đã gắn {ImageFiles.Count} ảnh để preview trong phiên này."; HasError = false;
+        await LoadMediaFiles(e, ImageFiles, "ảnh", false);
     }
     private async Task OnMasksSelected(InputFileChangeEventArgs e)
     {
-        foreach (var file in e.GetMultipleFiles(200)) { await using var stream = file.OpenReadStream(20 * 1024 * 1024); using var ms = new MemoryStream(); await stream.CopyToAsync(ms); MaskFiles[file.Name] = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}"; }
-        StatusMessage = $"Đã gắn {MaskFiles.Count} color mask để overlay."; HasError = false;
+        await LoadMediaFiles(e, MaskFiles, "color mask", true);
     }
     private async Task OnIndexMasksSelected(InputFileChangeEventArgs e)
     {
-        foreach (var file in e.GetMultipleFiles(200)) { await using var stream = file.OpenReadStream(20 * 1024 * 1024); using var ms = new MemoryStream(); await stream.CopyToAsync(ms); IndexMaskFiles[file.Name] = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}"; }
-        StatusMessage = $"Đã gắn {IndexMaskFiles.Count} train-ID mask cho pixel-level comparison."; HasError = false;
+        await LoadMediaFiles(e, IndexMaskFiles, "train-ID mask", true);
+    }
+    private async Task LoadMediaFiles(InputFileChangeEventArgs e, Dictionary<string, string> target, string kind, bool pngOnly)
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        try
+        {
+            var files = e.GetMultipleFiles(200);
+            foreach (var file in files)
+            {
+                var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+                if (pngOnly ? ext != ".png" : ext is not (".png" or ".jpg" or ".jpeg" or ".webp"))
+                    throw new InvalidOperationException($"Định dạng không hỗ trợ: {file.Name}.");
+                if (file.Size > 10 * 1024 * 1024)
+                    throw new InvalidOperationException($"{file.Name} vượt giới hạn 10 MiB mỗi file.");
+            }
+            var storedBytes = ImageFiles.Values.Concat(MaskFiles.Values).Concat(IndexMaskFiles.Values)
+                .Sum(data => (long)data.Length * 3 / 4);
+            storedBytes -= files.Where(file => target.ContainsKey(file.Name)).Sum(file => (long)target[file.Name].Length * 3 / 4);
+            if (storedBytes + files.Sum(file => file.Size) > 32 * 1024 * 1024)
+                throw new InvalidOperationException("Tổng ảnh và mask vượt 32 MiB cho một phiên. Hãy dùng bộ dữ liệu nhỏ hơn hoặc tải lại trang.");
+            var pending = new Dictionary<string, string>();
+            foreach (var file in files)
+            {
+                await using var stream = file.OpenReadStream(10 * 1024 * 1024);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var mime = Path.GetExtension(file.Name).ToLowerInvariant() switch
+                { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
+                pending[file.Name] = $"data:{mime};base64,{Convert.ToBase64String(ms.ToArray())}";
+            }
+            foreach (var pair in pending) target[pair.Key] = pair.Value;
+            StatusMessage = $"Đã gắn {target.Count} {kind}.";
+            HasError = false;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Không tải được {kind}: {ex.Message}";
+            HasError = true;
+        }
+        finally { IsBusy = false; }
     }
     private async Task RunQc()
     {
+        if (IsBusy) return;
         if (LabelsJson is null)
         {
             StatusMessage = "⚠️ Vui lòng tải lên tệp nhãn (Labels JSON) hoặc bấm 'Nạp bộ test 50 ảnh' ở phía trên để bắt đầu.";
@@ -1101,7 +1166,7 @@
     {
         if (ShowModelMask && frame.TryGetProperty("prediction_mask_png_base64", out var predicted) && predicted.ValueKind == JsonValueKind.String)
             return $"data:image/png;base64,{predicted.GetString()}";
-        return MaskFiles.TryGetValue(GetString(frame, "mask_color", ""), out var data) ? data : null;
+        return MaskFiles.TryGetValue(Path.GetFileName(GetString(frame, "mask_color", "").Replace('\\', '/')), out var data) ? data : null;
     }
     private static bool HasModelMask(JsonElement frame) => frame.TryGetProperty("prediction_mask_png_base64", out var predicted) && predicted.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(predicted.GetString());
     private void ToggleModelMask()
@@ -1132,7 +1197,7 @@
         return SelectedIssues.Any(i => {
             var oid = GetString(i, "object_id", "");
             var issueId = GetString(i, "issue_id", "");
-            if (!string.IsNullOrEmpty(objId) && (oid == objId || oid.Contains(objId))) return true;
+            if (!string.IsNullOrEmpty(objId) && (ObjectIdMatches(oid, objId))) return true;
             if (oid == $"obj_{idx}") return true;
             if (!string.IsNullOrEmpty(objId) && issueId.Contains($":{objId}:")) return true;
             if (issueId.Contains($":obj_{idx}:")) return true;
@@ -1215,7 +1280,7 @@
     {
         SetIssueDecision(issue, "confirmed");
         var objId = GetString(issue, "object_id", "");
-        if (!string.IsNullOrEmpty(objId)) IssueDecisions[objId] = "confirmed";
+        if (!string.IsNullOrEmpty(objId)) IssueDecisions[ObjectDecisionKey(objId)] = "confirmed";
         ActiveIssueId = GetString(issue, "issue_id", "");
         ActiveObjectId = objId;
     }
@@ -1224,7 +1289,7 @@
     {
         SetIssueDecision(issue, "rejected");
         var objId = GetString(issue, "object_id", "");
-        if (!string.IsNullOrEmpty(objId)) IssueDecisions[objId] = "rejected";
+        if (!string.IsNullOrEmpty(objId)) IssueDecisions[ObjectDecisionKey(objId)] = "rejected";
         ActiveIssueId = GetString(issue, "issue_id", "");
         ActiveObjectId = objId;
     }
@@ -1233,40 +1298,44 @@
     {
         SetIssueDecision(issue, "pending");
         var objId = GetString(issue, "object_id", "");
-        if (!string.IsNullOrEmpty(objId)) IssueDecisions.Remove(objId);
+        if (!string.IsNullOrEmpty(objId)) IssueDecisions.Remove(ObjectDecisionKey(objId));
     }
+
+    private string ObjectDecisionKey(string objectId) => $"object:{SelectedFrameName}:{objectId}";
+    private static bool ObjectIdMatches(string actual, string expected) => !string.IsNullOrEmpty(expected)
+        && actual.Split(" & ", StringSplitOptions.TrimEntries).Contains(expected, StringComparer.Ordinal);
 
     private bool IsObjectRejected(string objectId)
     {
         if (string.IsNullOrEmpty(objectId)) return false;
-        if (IssueDecisions.TryGetValue(objectId, out var d) && (d == "rejected" || d == "dismissed")) return true;
+        if (IssueDecisions.TryGetValue(ObjectDecisionKey(objectId), out var d) && (d == "rejected" || d == "dismissed")) return true;
         return SelectedIssues.Any(i => {
             var oid = GetString(i, "object_id", "");
-            return (oid == objectId || oid.Contains(objectId)) && (GetIssueDecision(i) == "rejected" || GetIssueDecision(i) == "dismissed");
+            return (ObjectIdMatches(oid, objectId)) && (GetIssueDecision(i) == "rejected" || GetIssueDecision(i) == "dismissed");
         });
     }
 
     private bool IsObjectAccepted(string objectId)
     {
         if (string.IsNullOrEmpty(objectId)) return false;
-        if (IssueDecisions.TryGetValue(objectId, out var d) && d == "confirmed") return true;
+        if (IssueDecisions.TryGetValue(ObjectDecisionKey(objectId), out var d) && d == "confirmed") return true;
         return SelectedIssues.Any(i => {
             var oid = GetString(i, "object_id", "");
-            return (oid == objectId || oid.Contains(objectId)) && GetIssueDecision(i) == "confirmed";
+            return (ObjectIdMatches(oid, objectId)) && GetIssueDecision(i) == "confirmed";
         });
     }
 
     private bool IsPredictionRejected(int idx)
     {
         var predId = $"MODEL_{idx}";
-        if (IssueDecisions.TryGetValue(predId, out var d) && (d == "rejected" || d == "dismissed")) return true;
+        if (IssueDecisions.TryGetValue(ObjectDecisionKey(predId), out var d) && (d == "rejected" || d == "dismissed")) return true;
         return SelectedIssues.Any(i => (GetString(i, "object_id", "") == predId || GetString(i, "issue_id", "").Contains($":prediction:{idx}")) && (GetIssueDecision(i) == "rejected" || GetIssueDecision(i) == "dismissed"));
     }
 
     private bool IsPredictionAccepted(int idx)
     {
         var predId = $"MODEL_{idx}";
-        if (IssueDecisions.TryGetValue(predId, out var d) && d == "confirmed") return true;
+        if (IssueDecisions.TryGetValue(ObjectDecisionKey(predId), out var d) && d == "confirmed") return true;
         return SelectedIssues.Any(i => (GetString(i, "object_id", "") == predId || GetString(i, "issue_id", "").Contains($":prediction:{idx}")) && GetIssueDecision(i) == "confirmed");
     }
 
@@ -1693,7 +1762,15 @@
         catch (Exception ex) { CvatJobResultUrl = null; CvatOperationSucceeded = false; CvatOperationMessage = $"Không đẩy được issue lên CVAT: {ex.Message}"; CvatOperationHasError = true; CvatStateLabel = "NOT CONNECTED"; }
         finally { IsBusy = false; }
     }
-    private async Task CopyIssue(JsonElement issue) { await JS.InvokeVoidAsync("navigator.clipboard.writeText", $"{GetString(issue,"error_type","Issue")}: {GetString(issue,"explanation","")}\nRule: {GetString(issue,"guideline_rule","")}"); StatusMessage = "Đã copy ghi chú issue."; }
+    private async Task CopyIssue(JsonElement issue)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", $"{GetString(issue,"error_type","Issue")}: {GetString(issue,"explanation","")}\nRule: {GetString(issue,"guideline_rule","")}");
+            StatusMessage = "Đã copy ghi chú issue."; HasError = false;
+        }
+        catch (JSException) { StatusMessage = "Trình duyệt không cho phép sao chép. Hãy chọn và sao chép nội dung ghi chú bằng tay."; HasError = true; }
+    }
     private async Task Download(string name, string content, string type) => await DownloadBytes(name, System.Text.Encoding.UTF8.GetBytes(content), type);
     private async Task DownloadBytes(string name, byte[] bytes, string type) => await JS.InvokeVoidAsync("qcDownload", name, type, Convert.ToBase64String(bytes));
     private string? GetImageUrl(string frame) => ImageFiles.TryGetValue(frame, out var data) ? data : ApiOnline ? Navigation.ToAbsoluteUri($"qc-image/{Uri.EscapeDataString(frame)}").ToString() : null;
@@ -1709,32 +1786,40 @@
         var value = GetProperty(GetProperty(element, parent), metric);
         return value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) ? number.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture) : "—";
     }
-    private static int GetInt(JsonElement element, string property, int fallback) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.TryGetInt32(out var n) ? n : fallback;
+    private static int GetInt(JsonElement element, string property, int fallback)
+    {
+        var value = GetProperty(element, property);
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number;
+        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number) ? number : fallback;
+    }
     private static bool GetBool(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.True;
     private static List<JsonElement> GetArray(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.Array ? v.EnumerateArray().Select(x => x.Clone()).ToList() : new();
     private static JsonElement GetObject(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.Object ? v : default;
     private static string GetStringArray(JsonElement element, string property) => string.Join(", ", GetArray(element, property).Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() : x.ToString()));
     private static (double X, double Y, double W, double H)? GetBox(JsonElement label)
     {
-        if (!label.TryGetProperty("box2d", out var b) || b.ValueKind != JsonValueKind.Object) return null;
-        double n(string k) => b.TryGetProperty(k, out var v) && v.TryGetDouble(out var d) ? d : 0;
+        if (label.ValueKind != JsonValueKind.Object || !label.TryGetProperty("box2d", out var b) || b.ValueKind != JsonValueKind.Object) return null;
+        double n(string k) => b.TryGetProperty(k, out var v) && TryNumber(v, out var d) ? d : 0;
         var x = n("x1"); var y = n("y1"); var w = n("x2") - x; var h = n("y2") - y; return w > 0 && h > 0 ? (x, y, w, h) : null;
     }
     private static (double X, double Y, double W, double H)? GetPredictionBox(JsonElement prediction)
     {
-        if (!prediction.TryGetProperty("box", out var box) || box.ValueKind != JsonValueKind.Array || box.GetArrayLength() < 4) return null;
-        var x = box[0].GetDouble(); var y = box[1].GetDouble(); var w = box[2].GetDouble() - x; var h = box[3].GetDouble() - y;
+        if (prediction.ValueKind != JsonValueKind.Object || !prediction.TryGetProperty("box", out var box) || box.ValueKind != JsonValueKind.Array || box.GetArrayLength() < 4) return null;
+        if (!TryNumber(box[0], out var x) || !TryNumber(box[1], out var y) || !TryNumber(box[2], out var x2) || !TryNumber(box[3], out var y2)) return null;
+        var w = x2 - x; var h = y2 - y;
         return w > 0 && h > 0 ? (x, y, w, h) : null;
     }
     private static (double X, double Y, double W, double H)? GetAnyBox(JsonElement el)
     {
+        if (el.ValueKind != JsonValueKind.Object) return null;
         if (el.TryGetProperty("box2d", out _)) return GetBox(el);
         if (el.TryGetProperty("box", out _)) return GetPredictionBox(el);
         return null;
     }
     private (double X, double Y, double W, double H)? GetIssueBox(JsonElement issue)
     {
-        if (issue.TryGetProperty("suggested_box", out var box) && box.ValueKind == JsonValueKind.Array && box.GetArrayLength() >= 4) return (box[0].GetDouble(), box[1].GetDouble(), box[2].GetDouble() - box[0].GetDouble(), box[3].GetDouble() - box[1].GetDouble());
+        var box = GetProperty(issue, "suggested_box");
+        if (box.ValueKind == JsonValueKind.Array && box.GetArrayLength() >= 4 && TryNumber(box[0], out var x1) && TryNumber(box[1], out var y1) && TryNumber(box[2], out var x2) && TryNumber(box[3], out var y2) && x2 > x1 && y2 > y1) return (x1, y1, x2 - x1, y2 - y1);
         if (SelectedFrame is not null)
         {
             var objectId = GetString(issue, "object_id", "");
@@ -1743,12 +1828,17 @@
         }
         return null;
     }
+    private static bool TryNumber(JsonElement value, out double number)
+    {
+        number = 0;
+        return value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out number) && double.IsFinite(number);
+    }
     private static string GetPolygonPoints(JsonElement polygon)
     {
-        if (!polygon.TryGetProperty("vertices", out var vertices) || vertices.ValueKind != JsonValueKind.Array) return "";
+        if (polygon.ValueKind != JsonValueKind.Object || !polygon.TryGetProperty("vertices", out var vertices) || vertices.ValueKind != JsonValueKind.Array) return "";
         var points = new List<string>();
         foreach (var point in vertices.EnumerateArray())
-            if (point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2 && point[0].TryGetDouble(out var x) && point[1].TryGetDouble(out var y))
+            if (point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2 && TryNumber(point[0], out var x) && TryNumber(point[1], out var y))
                 points.Add($"{x.ToString(System.Globalization.CultureInfo.InvariantCulture)},{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         return string.Join(" ", points);
     }

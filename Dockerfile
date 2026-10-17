@@ -39,17 +39,13 @@ COPY --from=blazor-build /app/blazor ./blazor/
 
 # Environment settings
 ENV PORT=5000
-ENV QC_PUBLIC_DEMO=false
+ENV QC_PUBLIC_DEMO=true
 ENV QcApi__BaseUrl=http://127.0.0.1:8000
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 5000
 
-# Entrypoint script: starts Python backend internally on 8000, then starts Blazor UI on $PORT
-RUN printf '#!/bin/sh\n\
-PORT=8000 HOST=127.0.0.1 python3 /app/backend/app.py &\n\
-sleep 2\n\
-cd /app/blazor && exec dotnet BlazorApp.dll\n' > /app/start.sh && chmod +x /app/start.sh
-
-ENTRYPOINT ["/app/start.sh"]
+# Wait for API readiness and exit if either child dies, so Render can restart it.
+COPY start_container.py ./
+ENTRYPOINT ["python3", "-u", "/app/start_container.py"]

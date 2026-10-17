@@ -1,6 +1,6 @@
 """
-Modal Cloud GPU Vision Pipeline (YOLO11 + SAM 2.1 + DINOv2)
-Cung cấp API Serverless chạy trên GPU Nvidia T4 (16GB VRAM) hoàn toàn miễn phí (Modal $30 free credits/month).
+Modal Cloud CPU Vision Pipeline (YOLO11 + SAM 2.1 + DINOv2)
+API serverless dùng CPU; thời gian chạy và tải model tính theo tài khoản Modal.
 Tương thích 100% với QC Studio BDD100K 2D & Blazor Dashboard.
 
 Cách deploy lên Modal:
@@ -11,6 +11,17 @@ Cách deploy lên Modal:
 import io
 import base64
 import modal
+
+def decode_image(value: str) -> bytes:
+    if not isinstance(value, str) or not value:
+        raise ValueError("image must contain base64-encoded image bytes")
+    if len(value) > 14 * 1024 * 1024:
+        raise ValueError("Image exceeds 10 MiB")
+    data = base64.b64decode(value.split(",", 1)[-1] if value.startswith("data:") else value, validate=True)
+    if not data or len(data) > 10 * 1024 * 1024:
+        raise ValueError("Invalid or oversized image")
+    return data
+
 
 # 1. Định nghĩa môi trường Linux + cài thư viện trên Cloud của Modal
 image = (
@@ -45,38 +56,31 @@ COCO_TO_BDD100K = {
 
 
 # 2. Khởi tạo Class giữ 3 Model trên CPU Modal Cloud (Không cần add thẻ thanh toán)
-@app.cls(cpu=2.0, scaledown_window=180)
+@app.cls(cpu=2.0, scaledown_window=180, timeout=600)
 class VisionEngine:
     @modal.enter()
     def load_models(self):
         import torch
-        from ultralytics import YOLO, SAM
-        from transformers import AutoImageProcessor, AutoModel
-
-        print("🚀 [Modal GPU] Đang tải 3 model vào VRAM của GPU Nvidia T4...")
+        from ultralytics import YOLO
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
-        # 1. Load YOLO (Object Detection)
         self.yolo = YOLO("yolo11n.pt").to(self.device)
-        print("✅ [Modal GPU] YOLO11 loaded successfully")
+        self.sam = None
+        self.dino_model = None
+        print(f"[Modal] YOLO11 ready on {self.device}; SAM/DINO load only when requested")
 
-        # 2. Load SAM 2 / SAM 2.1 (Segment Anything)
-        try:
+    def load_sam(self):
+        if self.sam is None:
+            from ultralytics import SAM
             self.sam = SAM("sam2.1_b.pt").to(self.device)
-            print("✅ [Modal GPU] SAM 2.1 loaded successfully")
-        except Exception as exc:
-            print(f"⚠️ [Modal GPU] sam2.1_b.pt fallback to sam2_b.pt: {exc}")
-            self.sam = SAM("sam2_b.pt").to(self.device)
 
-        # 3. Load DINOv2 (Feature Extraction / Foundation Model)
-        dino_id = "facebook/dinov2-base"
-        self.dino_processor = AutoImageProcessor.from_pretrained(dino_id)
-        self.dino_model = AutoModel.from_pretrained(dino_id).to(self.device).eval()
-        print("✅ [Modal GPU] DINOv2 loaded successfully")
-        print("🎉 [Modal GPU] Toàn bộ 3 Model đã sẵn sàng trên GPU T4!")
+    def load_dino(self):
+        if self.dino_model is None:
+            from transformers import AutoImageProcessor, AutoModel
+            self.dino_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-base")
+            self.dino_model = AutoModel.from_pretrained("facebook/dinov2-base").to(self.device).eval()
 
     @modal.method()
-    def predict_full(self, image_bytes: bytes, threshold: float = 0.25):
+    def predict_full(self, image_bytes: bytes, threshold: float = 0.25, include_masks: bool = True, include_embedding: bool = False):
         import torch
         from PIL import Image
 
@@ -113,8 +117,9 @@ class VisionEngine:
 
             # B. Chạy SAM 2.1 Segment Anything trên các bounding boxes
             segmentations = []
-            if len(boxes) > 0:
+            if include_masks and boxes:
                 try:
+                    self.load_sam()
                     sam_res = self.sam(img, bboxes=boxes, verbose=False)
                     if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
                         for idx, seg in enumerate(sam_res[0].masks.xy):
@@ -131,11 +136,14 @@ class VisionEngine:
                                     "confidence": cnf
                                 })
                 except Exception as ex:
-                    print(f"⚠️ [Modal GPU] SAM prediction warning: {ex}")
+                    raise RuntimeError(f"SAM inference failed: {ex}") from ex
 
             # C. Chạy DINOv2 trích xuất đặc trưng hình ảnh
-            inputs = self.dino_processor(images=img, return_tensors="pt").to(self.device)
-            feat = self.dino_model(**inputs).last_hidden_state[:, 0, :].squeeze().cpu().tolist()
+            feat = []
+            if include_embedding:
+                self.load_dino()
+                inputs = self.dino_processor(images=img, return_tensors="pt").to(self.device)
+                feat = self.dino_model(**inputs).last_hidden_state[:, 0, :].squeeze().cpu().tolist()
 
         return {
             "num_detections": len(predictions),
@@ -156,7 +164,7 @@ def fastapi_app():
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse
 
-    web_app = FastAPI(title="Modal GPU Vision API (YOLO + SAM 2.1 + DINOv2)")
+    web_app = FastAPI(title="Modal CPU Vision API (YOLO + SAM 2.1 + DINOv2)")
     web_app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -171,9 +179,11 @@ def fastapi_app():
     def status():
         return {
             "status": "online",
-            "gpu": "Nvidia T4 (16GB VRAM)",
-            "model": "Modal Cloud GPU Ensemble (YOLO11 + SAM 2.1 + DINOv2)",
-            "device": "cuda:0",
+            "gpu": None,
+            "model": "YOLO11 + SAM 2.1 (DINOv2 features on /analyze)",
+            "device": "cpu",
+            "capabilities": ["bbox", "segmentation", "sam2"],
+            "model_readiness": "lazy; weights load on first inference",
             "label_count": 80,
             "type": "ensemble"
         }
@@ -198,14 +208,14 @@ def fastapi_app():
             try:
                 body = await request.json()
                 if "image" in body:
-                    img_bytes = base64.b64decode(body["image"])
+                    img_bytes = decode_image(body["image"])
             except Exception:
                 pass
 
         if not img_bytes:
             return JSONResponse(status_code=400, content={"error": "Vui lòng upload file ảnh hoặc gửi JSON có field 'image' (base64)"})
 
-        res = engine.predict_full.remote(img_bytes)
+        res = await engine.predict_full.remote.aio(img_bytes, include_embedding=True)
         return res
 
     # 2. Endpoint chuẩn QC Studio cho Object Detection (BBox)
@@ -217,11 +227,15 @@ def fastapi_app():
                 return status()
             img_b64 = body.get("image", "")
             thresh = float(body.get("threshold", 0.25))
-            img_bytes = base64.b64decode(img_b64)
-            res = engine.predict_full.remote(img_bytes, threshold=thresh)
+            if not 0 <= thresh <= 1:
+                raise ValueError("threshold must be between 0 and 1")
+            img_bytes = decode_image(img_b64)
+            res = await engine.predict_full.remote.aio(img_bytes, threshold=thresh, include_masks=False)
             return res.get("predictions", [])
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             return JSONResponse(status_code=400, content={"error": str(e)})
+        except Exception as e:
+            return JSONResponse(status_code=503, content={"error": str(e)})
 
     # 3. Endpoint chuẩn QC Studio cho Segmentation (SAM 2.1 / Polygon Masks)
     @web_app.post("/segmentation")
@@ -233,10 +247,14 @@ def fastapi_app():
                 return status()
             img_b64 = body.get("image", "")
             thresh = float(body.get("threshold", 0.25))
-            img_bytes = base64.b64decode(img_b64)
-            res = engine.predict_full.remote(img_bytes, threshold=thresh)
+            if not 0 <= thresh <= 1:
+                raise ValueError("threshold must be between 0 and 1")
+            img_bytes = decode_image(img_b64)
+            res = await engine.predict_full.remote.aio(img_bytes, threshold=thresh, include_masks=True)
             return res.get("masks", [])
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             return JSONResponse(status_code=400, content={"error": str(e)})
+        except Exception as e:
+            return JSONResponse(status_code=503, content={"error": str(e)})
 
     return web_app

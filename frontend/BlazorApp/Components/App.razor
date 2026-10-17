@@ -6,20 +6,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <ResourcePreloader />
-    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["BlazorApp.styles.css"]" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
-    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet @rendermode="new InteractiveServerRenderMode(prerender: false)" />
 </head>
 
 <body>
+    <div id="qc-startup" role="status" class="startup-status">
+        <p id="qc-startup-message">Đang kết nối QC Studio…</p>
+        <a href="/">Tải lại trang</a>
+    </div>
     <Routes @rendermode="new InteractiveServerRenderMode(prerender: false)" />
     <ReconnectModal />
-    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
-    <script src="_framework/blazor.web.js"></script>
+    <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
+    <script src="@Assets["_framework/blazor.web.js"]" autostart="false"></script>
+    <script src="@Assets["startup.js"]"></script>
     <script>
         window.qcDownload = (name, type, base64) => {
             const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));

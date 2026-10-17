@@ -267,6 +267,7 @@ try:
     from fastapi.responses import JSONResponse, Response, FileResponse
     from fastapi.staticfiles import StaticFiles
     from fastapi.middleware.cors import CORSMiddleware
+    from starlette.concurrency import run_in_threadpool
     import uvicorn
 
     fastapi_app = FastAPI(title="BDD100K 2D Next-Gen AI QC API", version="2.0.0")
@@ -285,15 +286,16 @@ try:
             "service": "local-dataset-qc-api",
             # A liveness check must not import/load large model checkpoints.
             # Provider availability is reported by /api/models on demand.
-            "models_mode": "lazy local providers; see /api/models",
+            "models_mode": "remote" if os.environ.get("QC_MODAL_API_URL", "").strip() else "local",
+            "public_demo": public_demo_enabled(),
             "capabilities": ["rule-based-geometry", "local-bbox-inference", "local-semantic-mask-comparison", "workspace-guideline-versioning", "cvat-issues"]
         }
 
     @fastapi_app.get("/api/models")
-    async def get_models():
+    def get_models():
         providers = available_providers()
         return {"privacy": "Local inference is the default. Gemini is opt-in per run and sends selected images plus guideline to Google.", "providers": providers,
-                "gemini": {"configured": gemini_configured(), "model": gemini_model_name(), "enabled": gemini_configured()}}
+                "gemini": {"configured": gemini_configured() and not public_demo_enabled(), "model": gemini_model_name(), "enabled": gemini_configured() and not public_demo_enabled()}}
 
     @fastapi_app.post("/api/gemini/config")
     async def save_gemini_config(request: Request):
@@ -344,6 +346,17 @@ try:
     @fastapi_app.post("/api/qc/run")
     async def run_workspace_qc(request: Request):
         payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
+        # Network inference and image processing must not block all other API requests.
+        return await run_in_threadpool(run_workspace_qc_payload, payload)
+
+    def run_workspace_qc_payload(payload: dict):
+        if payload.get("use_gemini") is True:
+            if public_demo_enabled():
+                raise HTTPException(status_code=403, detail="Gemini is disabled on the public demo.")
+            if not gemini_configured():
+                raise HTTPException(status_code=400, detail="Gemini API key is not configured.")
         workspace_id = payload.get("workspace_id")
         workspace = get_workspace(workspace_id) if workspace_id else None
         if workspace_id and workspace is None:
@@ -675,7 +688,7 @@ try:
 
         try:
             checker = BDDQualityChecker(cfg, guideline_manager=GuidelineManager(request_guideline) if request_guideline else None)
-            adv_res = checker.check_dataset_advanced(dataset_data)
+            adv_res = await run_in_threadpool(checker.check_dataset_advanced, dataset_data)
             return {
                 "status": "success",
                 "summary": adv_res["summary"],
@@ -700,6 +713,9 @@ try:
         except Exception:
             raise HTTPException(status_code=400, detail="Request body must be valid JSON.")
 
+        return await run_in_threadpool(gemini_inspect_frame_payload, payload)
+
+    def gemini_inspect_frame_payload(payload):
         frame_name = payload.get("frame_name", "")
         encoded_image = payload.get("image_base64")
         image_bytes = None
@@ -769,7 +785,7 @@ try:
         raw_data = payload.get("data", payload) if isinstance(payload, dict) else payload
         cfg = get_default_or_saved_config()
         checker = BDDQualityChecker(cfg)
-        healed_data, stats = checker.auto_heal(raw_data)
+        healed_data, stats = await run_in_threadpool(checker.auto_heal, raw_data)
         return {
             "status": "success",
             "stats": stats,
@@ -911,6 +927,11 @@ try:
     async def push_issues_to_cvat(request: Request):
         """Create frame-mapped CVAT issues and optionally return the job (update stage/state)."""
         payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
+        return await run_in_threadpool(push_issues_to_cvat_payload, request, payload)
+
+    def push_issues_to_cvat_payload(request, payload):
         custom_url = payload.get("cvat_url") if isinstance(payload, dict) else None
         custom_token = payload.get("cvat_access_token") if isinstance(payload, dict) else None
         if custom_url and custom_token:
@@ -1172,7 +1193,7 @@ try:
         }
 
     @fastapi_app.get("/api/cvat/jobs")
-    async def cvat_list_jobs(request: Request):
+    def cvat_list_jobs(request: Request):
         """Retrieve recent active jobs from CVAT for 1-click selection."""
         base_url, token = get_cvat_config(request)
         if not base_url or not token:
@@ -1207,7 +1228,7 @@ try:
             raise HTTPException(status_code=502, detail=f"Không lấy được danh sách job từ CVAT: {exc}")
 
     @fastapi_app.get("/api/cvat/status")
-    async def cvat_status(request: Request):
+    def cvat_status(request: Request):
         base_url, token = get_cvat_config(request)
         if not base_url or not token:
             return {"configured": False, "reachable": False, "detail": "Set CVAT_URL and CVAT_ACCESS_TOKEN in the backend process environment or pass X-CVAT-Url / X-CVAT-Token."}
@@ -1254,7 +1275,7 @@ try:
         return {"status": "success", "configured": True}
 
     @fastapi_app.get("/api/cvat/jobs/{job_id}/frame-map")
-    async def cvat_job_frame_map(job_id: int, request: Request):
+    def cvat_job_frame_map(job_id: int, request: Request):
         base_url, token = get_cvat_config(request)
         if not base_url or not token:
             raise HTTPException(status_code=503, detail="CVAT backend credentials are not configured")
@@ -1290,6 +1311,9 @@ try:
             payload = await request.json()
         except Exception:
             pass
+        return await run_in_threadpool(cvat_resolve_issue_payload, issue_id, base_url, headers, payload)
+
+    def cvat_resolve_issue_payload(issue_id, base_url, headers, payload):
         resolved = bool(payload.get("resolved", True))
         patch_data = json.dumps({"resolved": resolved}).encode("utf-8")
         req = urllib.request.Request(f"{base_url}/api/issues/{issue_id}", data=patch_data, headers={**headers, "Content-Type": "application/json"}, method="PATCH")
@@ -1310,6 +1334,9 @@ try:
                 payload = await request.json()
             except Exception:
                 payload = {}
+        return await run_in_threadpool(cvat_pull_job_payload, job_id, request, payload)
+
+    def cvat_pull_job_payload(job_id, request, payload):
         if payload.get("cvat_url") and payload.get("cvat_access_token"):
             base_url = str(payload["cvat_url"]).rstrip("/")
             if base_url.endswith("/api"):

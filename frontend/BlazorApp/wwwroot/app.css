@@ -554,13 +554,23 @@
     margin: 0 0 16px;
 }
 
-/* Hide native file inputs completely so the dropzone and compact-upload labels look professional */
+/* Visually hide native file inputs without display:none so label clicks and file pickers work reliably */
 input[type="file"],
 .dropzone input,
 .compact-upload input,
 label.dropzone input,
 label.compact-upload input {
-    display: none !important;
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 .dropzone {
@@ -698,3 +708,9 @@ label.compact-upload input {
     margin-left: auto;
 }
 
+
+/* Startup and API state remain visible even before an interactive circuit exists. */
+.startup-status,.app-error{margin:24px;padding:20px;border:1px solid #58617a;border-radius:10px;background:#141c29;color:#edf2fa}
+.startup-status a,.app-error a{color:#b6aaff;text-decoration:underline}
+.service-status{padding:7px 20px;background:#101927;color:#aebbd0;font-size:12px;display:flex;gap:16px;align-items:center}
+.service-status button{font:inherit}

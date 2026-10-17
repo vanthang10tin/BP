@@ -2,13 +2,12 @@ using BlazorApp.Components;
 using MudBlazor.Services;
 using Microsoft.AspNetCore.Hosting.StaticWebAssets;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 var customPort = Environment.GetEnvironmentVariable("PORT");
-if (!string.IsNullOrEmpty(customPort))
-{
-    builder.WebHost.UseUrls($"http://*:{customPort}");
-}
+builder.WebHost.UseUrls($"http://*:{customPort ?? "5000"}");
+
 if (builder.Environment.IsDevelopment())
 {
     StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
@@ -21,22 +20,19 @@ builder.Services.AddDataProtection()
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(options =>
     {
-        options.DetailedErrors = true;
-    });
-
-builder.Services.AddServerSideBlazor(options =>
+        options.DetailedErrors = builder.Environment.IsDevelopment();
+        options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(5);
+        options.DisconnectedCircuitMaxRetained = 100;
+    }).AddHubOptions(options =>
 {
-    options.DetailedErrors = true;
-    options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(10);
-}).AddHubOptions(options =>
-{
-    options.MaximumReceiveMessageSize = 100 * 1024 * 1024; // 100MB for image / dataset payloads
+    // Generous limit for SignalR message chunks
+    options.MaximumReceiveMessageSize = 10 * 1024 * 1024;
 });
 
 builder.Services.AddMudServices();
 builder.Services.AddHttpClient("qc", client =>
 {
-    var baseUrl = builder.Configuration["QcApi:BaseUrl"] ?? "http://localhost:8000";
+    var baseUrl = builder.Configuration["QcApi:BaseUrl"] ?? "http://127.0.0.1:8000";
     client.BaseAddress = new Uri(baseUrl);
     client.Timeout = TimeSpan.FromMinutes(10);
 });
@@ -47,12 +43,40 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
 }
-app.UseStatusCodePagesWithReExecute("/not-found");
 
-app.UseAntiforgery();
+// Forwarded headers for reverse proxy (Render, Cloudflare, Nginx)
+var forwardedOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedOptions.KnownIPNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedOptions);
+
+app.UseStatusCodePagesWithReExecute("/not-found");
 
 app.UseStaticFiles();
 app.MapStaticAssets();
+
+app.UseAntiforgery();
+
+app.MapGet("/healthz", async (IHttpClientFactory clients, CancellationToken cancellationToken) =>
+{
+    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    timeout.CancelAfter(TimeSpan.FromSeconds(5));
+    try
+    {
+        using var response = await clients.CreateClient("qc").GetAsync("/api/health", timeout.Token);
+        return response.IsSuccessStatusCode
+            ? Results.Ok(new { status = "ok" })
+            : Results.Json(new { status = "degraded", code = (int)response.StatusCode }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { status = "unavailable", error = ex.Message }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
+
 // Keep frame previews same-origin with the Blazor UI. The browser must not
 // assume that the QC API is listening on its own localhost when deployed.
 app.MapGet("/qc-image/{filename}", async (string filename, IHttpClientFactory clients, CancellationToken cancellationToken) =>
@@ -78,6 +102,7 @@ app.MapGet("/qc-image/{filename}", async (string filename, IHttpClientFactory cl
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 });
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

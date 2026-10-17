@@ -1,7 +1,16 @@
 @inherits LayoutComponentBase
 
 <main class="main-layout">
-    @Body
+    <ErrorBoundary>
+        <ChildContent>@Body</ChildContent>
+        <ErrorContent>
+            <div class="app-error" role="alert">
+                <h1>Phiên làm việc gặp lỗi</h1>
+                <p>Không thể tiếp tục thao tác trong phiên này. Tải lại trang để kết nối lại.</p>
+                <a href="/">Tải lại QC Studio</a>
+            </div>
+        </ErrorContent>
+    </ErrorBoundary>
 </main>
 
 <div id="blazor-error-ui" data-nosnippet>

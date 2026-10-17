@@ -3,7 +3,7 @@
 Architecture:
 - Object Detection (BBox): Ultralytics YOLO26 (Native End-to-End NMS-Free) via yolo26x.pt / yolo26n.pt
 - Segmentation (Mask & Polygon): Meta SAM 2.1 Hiera-Small via CVAT Nuclio Container (port 32001 / 32002) and YOLO26-Seg
-Images never go to a hosted model API. Provider endpoints are local loopback by default.
+Provider endpoints use loopback by default. QC_MODAL_API_URL explicitly selects hosted Modal inference.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from typing import Any
 
 from PIL import Image
@@ -35,23 +36,29 @@ class ProviderError(RuntimeError):
     pass
 
 
+def _modal_base_url() -> str:
+    value = os.environ.get("QC_MODAL_API_URL", "").strip().rstrip("/")
+    if value:
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ProviderError("QC_MODAL_API_URL must be an HTTP(S) base URL without credentials, query or fragment")
+    return value
+
+
 def _url(capability: str) -> str:
-    modal_url = os.environ.get("QC_MODAL_API_URL", "").strip().rstrip("/")
+    modal_url = _modal_base_url()
     if modal_url:
-        os.environ["QC_ALLOW_REMOTE_MODEL_ENDPOINTS"] = "true"
-        if capability in ("bbox",):
-            return f"{modal_url}/bbox"
-        elif capability in ("segmentation", "sam2"):
-            return f"{modal_url}/segmentation"
-        elif capability in ("panoptic_bbox", "dinov3_seg"):
-            return f"{modal_url}/analyze"
-        return f"{modal_url}/"
+        routes = {"bbox": "bbox", "segmentation": "segmentation", "sam2": "segmentation"}
+        if capability not in routes:
+            raise ProviderError(f"Modal does not provide the {capability} contract")
+        return f"{modal_url}/{routes[capability]}"
 
     env_name, default = DEFAULTS.get(capability, ("QC_MODEL_URL", "http://127.0.0.1:32001/"))
     value = os.environ.get(env_name, default).rstrip("/") + "/"
-    if not value.startswith(("http://", "https://")):
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ProviderError(f"{env_name} must be an HTTP(S) URL")
-    hostname = value.split("//", 1)[1].split("/", 1)[0].split(":", 1)[0].strip("[]").lower()
+    hostname = parsed.hostname.lower()
     is_loopback = hostname == "localhost"
     try:
         is_loopback = is_loopback or ipaddress.ip_address(hostname).is_loopback
@@ -81,32 +88,35 @@ def _post(capability: str, payload: dict[str, Any], timeout: int = 90) -> Any:
 
 
 def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
-    cached = _STATUS_CACHE.get(capability)
+    modal_url = _modal_base_url()
+    cache_key = f"{capability}:{modal_url or os.environ.get(DEFAULTS.get(capability, ('QC_MODEL_URL', ''))[0], '')}"
+    cached = _STATUS_CACHE.get(cache_key)
     if cached and time.monotonic() - cached[0] < 15:
         return dict(cached[1])
 
-    modal_url = os.environ.get("QC_MODAL_API_URL", "").strip().rstrip("/")
     if modal_url:
+        result = {"id": capability, "available": False, "privacy": "modal-cloud",
+                  "name": "Modal Cloud", "device": "unknown", "supported_classes": []}
+        if capability not in {"bbox", "segmentation", "sam2"}:
+            result["error"] = f"Modal does not provide the {capability} contract"
+            return result
         try:
             req = urllib.request.Request(f"{modal_url}/status", headers={"User-Agent": "QC-Studio"})
-            with urllib.request.urlopen(req, timeout=5) as res:
+            with urllib.request.urlopen(req, timeout=min(timeout, 5)) as res:
                 info = json.loads(res.read().decode())
-                result = {
-                    "id": capability,
-                    "available": True,
-                    "privacy": "modal-cloud-gpu",
-                    "name": f"Modal Cloud GPU ({info.get('model', 'YOLO11 + SAM 2.1 + DINO')})",
-                    "device": info.get("gpu", "Nvidia T4 (16GB VRAM)"),
-                    "type": "mask" if capability in ("segmentation", "sam2", "dinov3_seg") else "bbox",
-                    "label_count": 80,
-                    "supported_classes": list(set(COCO_TO_BDD100K.values())),
-                    "thresholds": {},
-                    "error": None
-                }
-                _STATUS_CACHE[capability] = (time.monotonic(), result)
-                return dict(result)
-        except Exception:
-            pass
+            if not isinstance(info, dict) or info.get("status") not in {"online", "ok"}:
+                raise ProviderError("Unexpected Modal status response")
+            if capability not in info.get("capabilities", ["bbox", "segmentation", "sam2"]):
+                raise ProviderError(f"Modal does not advertise {capability}")
+            result.update(available=True, name=f"Modal Cloud ({info.get('model', capability)})",
+                          device=info.get("device", "unknown"),
+                          type="mask" if capability in {"segmentation", "sam2"} else "bbox",
+                          label_count=info.get("label_count", 80),
+                          supported_classes=list(set(COCO_TO_BDD100K.values())), thresholds={}, error=None)
+        except Exception as exc:
+            result["error"] = f"Modal endpoint unavailable: {exc}"
+        _STATUS_CACHE[cache_key] = (time.monotonic(), result)
+        return dict(result)
 
     # 1. BBox capability: Primary is Ultralytics YOLO26
     if capability == "bbox" and os.environ.get("QC_FORCE_NUCLIO_BBOX", "false").lower() not in ("1", "true", "yes"):
@@ -126,7 +136,7 @@ def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
                     "thresholds": {},
                     "error": None
                 }
-                _STATUS_CACHE[capability] = (time.monotonic(), result)
+                _STATUS_CACHE[cache_key] = (time.monotonic(), result)
                 return dict(result)
         except Exception:
             pass
@@ -148,7 +158,7 @@ def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
                     "thresholds": {},
                     "error": None
                 }
-                _STATUS_CACHE[capability] = (time.monotonic(), result)
+                _STATUS_CACHE[cache_key] = (time.monotonic(), result)
                 return dict(result)
         except Exception:
             pass
@@ -174,7 +184,7 @@ def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
             "thresholds": rules.get("class_thresholds", {}),
             "error": None
         }
-        _STATUS_CACHE[capability] = (time.monotonic(), result)
+        _STATUS_CACHE[cache_key] = (time.monotonic(), result)
         return dict(result)
     except Exception as exc:
         # If SAM2 container failed, check if native YOLO26-Seg is available
@@ -193,12 +203,12 @@ def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
                     "thresholds": {},
                     "error": None
                 }
-                _STATUS_CACHE[capability] = (time.monotonic(), result)
+                _STATUS_CACHE[cache_key] = (time.monotonic(), result)
                 return dict(result)
 
         result = {"id": capability, "available": False, "privacy": "loopback", "name": capability,
                   "device": None, "supported_classes": [], "error": str(exc)[:500]}
-        _STATUS_CACHE[capability] = (time.monotonic(), result)
+        _STATUS_CACHE[cache_key] = (time.monotonic(), result)
         return dict(result)
 
 
@@ -384,28 +394,16 @@ def infer_bbox(image: bytes, threshold: float, classes: list[str], label_mapping
     if not image or len(image) > MAX_IMAGE_BYTES:
         raise ProviderError("Invalid or oversized image")
 
-    modal_url = os.environ.get("QC_MODAL_API_URL", "").strip().rstrip("/")
-    if modal_url:
-        try:
-            payload = {"image": base64.b64encode(image).decode("ascii"), "threshold": threshold,
-                       "task_labels": classes, "mapping": label_mapping or {}}
-            result = _post("bbox", payload, timeout=60)
-            if isinstance(result, list):
-                info = {
-                    "id": "bbox",
-                    "available": True,
-                    "privacy": "modal-cloud-gpu",
-                    "name": "Modal Cloud GPU (Nvidia T4 · YOLO11)",
-                    "device": "Nvidia T4 (16GB VRAM)",
-                    "type": "bbox",
-                    "label_count": 80,
-                    "supported_classes": list(set(COCO_TO_BDD100K.values())),
-                    "thresholds": {},
-                    "error": None
-                }
-                return result, info
-        except Exception as exc:
-            print(f"[WARN] Modal GPU bbox inference failed, falling back: {exc}")
+    if _modal_base_url():
+        payload = {"image": base64.b64encode(image).decode("ascii"), "threshold": threshold,
+                   "task_labels": classes, "mapping": label_mapping or {}}
+        result = _post("bbox", payload, timeout=180)
+        if not isinstance(result, list):
+            raise ProviderError("Modal bbox returned an unexpected response")
+        info = provider_info("bbox")
+        info["available"] = True
+        info["error"] = None
+        return result, info
 
     pref = (preferred_model or os.environ.get("QC_BBOX_PROVIDER", "")).strip().lower()
     if pref in ("dino", "dinov3", "panoptic_bbox"):
@@ -454,28 +452,16 @@ def infer_segmentation(image: bytes, threshold: float, classes: list[str], label
     if not image or len(image) > MAX_IMAGE_BYTES:
         raise ProviderError("Invalid or oversized image")
 
-    modal_url = os.environ.get("QC_MODAL_API_URL", "").strip().rstrip("/")
-    if modal_url:
-        try:
-            payload = {"image": base64.b64encode(image).decode("ascii"), "threshold": threshold,
-                       "task_labels": classes, "mapping": label_mapping or {}}
-            result = _post("segmentation", payload, timeout=60)
-            if isinstance(result, list):
-                info = {
-                    "id": "segmentation",
-                    "available": True,
-                    "privacy": "modal-cloud-gpu",
-                    "name": "Modal Cloud GPU (Nvidia T4 · SAM 2.1)",
-                    "device": "Nvidia T4 (16GB VRAM)",
-                    "type": "mask",
-                    "label_count": 80,
-                    "supported_classes": list(set(COCO_TO_BDD100K.values())),
-                    "thresholds": {},
-                    "error": None
-                }
-                return result, info
-        except Exception as exc:
-            print(f"[WARN] Modal GPU segmentation inference failed, falling back: {exc}")
+    if _modal_base_url():
+        payload = {"image": base64.b64encode(image).decode("ascii"), "threshold": threshold,
+                   "task_labels": classes, "mapping": label_mapping or {}}
+        result = _post("segmentation", payload, timeout=180)
+        if not isinstance(result, list):
+            raise ProviderError("Modal segmentation returned an unexpected response")
+        info = provider_info("segmentation")
+        info["available"] = True
+        info["error"] = None
+        return result, info
 
     pref = (preferred_model or os.environ.get("QC_SEGMENTATION_PROVIDER", "")).strip().lower()
 
@@ -537,21 +523,9 @@ def infer_segmentation(image: bytes, threshold: float, classes: list[str], label
 
 
 def available_providers() -> list[dict[str, Any]]:
+    if _modal_base_url():
+        return [provider_info("bbox"), provider_info("segmentation")]
     providers = []
-    modal_url = os.environ.get("QC_MODAL_API_URL", "").strip().rstrip("/")
-    if modal_url:
-        providers.append({
-            "id": "modal_gpu",
-            "available": True,
-            "privacy": "modal-cloud-gpu",
-            "name": "Modal Cloud GPU (Nvidia T4 · YOLO11 + SAM 2.1 + DINOv2)",
-            "device": "Nvidia T4 (16GB VRAM)",
-            "type": "ensemble",
-            "label_count": 80,
-            "supported_classes": list(set(COCO_TO_BDD100K.values())),
-            "thresholds": {},
-            "error": None
-        })
     # 1. BBox Detector: YOLO26
     bbox_p = provider_info("bbox")
     providers.append(bbox_p)

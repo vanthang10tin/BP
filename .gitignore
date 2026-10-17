@@ -73,4 +73,6 @@ backend/.qc-data/
 **/[Oo]bj/
 *.user
 *.suo
+.qc-verify/
+
 
