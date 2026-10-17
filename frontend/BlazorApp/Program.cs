@@ -9,14 +9,29 @@ if (!string.IsNullOrEmpty(customPort))
 {
     builder.WebHost.UseUrls($"http://*:{customPort}");
 }
-StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
+if (builder.Environment.IsDevelopment())
+{
+    StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
+}
 
 // Add services to the container.
 builder.Services.AddDataProtection()
     .SetApplicationName("QCStudio2D");
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents(options =>
+    {
+        options.DetailedErrors = true;
+    });
+
+builder.Services.AddServerSideBlazor(options =>
+{
+    options.DetailedErrors = true;
+    options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(10);
+}).AddHubOptions(options =>
+{
+    options.MaximumReceiveMessageSize = 100 * 1024 * 1024; // 100MB for image / dataset payloads
+});
 
 builder.Services.AddMudServices();
 builder.Services.AddHttpClient("qc", client =>

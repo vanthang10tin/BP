@@ -10,7 +10,8 @@ RUN dotnet restore frontend/BlazorApp/BlazorApp.csproj
 
 # Copy all Blazor source files and publish release
 COPY frontend/BlazorApp/ ./frontend/BlazorApp/
-RUN dotnet publish frontend/BlazorApp/BlazorApp.csproj -c Release -o /app/blazor --no-restore
+RUN dotnet publish frontend/BlazorApp/BlazorApp.csproj -c Release -o /app/blazor && \
+    test -f /app/blazor/wwwroot/_framework/blazor.web.js || (echo "ERROR: blazor.web.js is missing from published output!" && exit 1)
 
 # ========================================================
 # Stage 2: Final Production Runtime (ASP.NET 10 + Python 3)
