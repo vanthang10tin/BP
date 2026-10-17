@@ -44,8 +44,8 @@ COCO_TO_BDD100K = {
 }
 
 
-# 2. Khởi tạo Class giữ 3 Model trên GPU Nvidia T4 (16GB VRAM)
-@app.cls(gpu="T4", scaledown_window=180)  # Giữ GPU thức 3 phút sau mỗi lần gọi để liên tiếp cực nhanh và tiết kiệm chi phí
+# 2. Khởi tạo Class giữ 3 Model trên CPU Modal Cloud (Không cần add thẻ thanh toán)
+@app.cls(cpu=2.0, scaledown_window=180)
 class VisionEngine:
     @modal.enter()
     def load_models(self):
