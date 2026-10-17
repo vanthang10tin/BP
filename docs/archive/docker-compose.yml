@@ -1,0 +1,254 @@
+services:
+  # ==========================================
+  # 1. CVAT Core Databases & Services
+  # ==========================================
+  cvat_db:
+    image: postgres:15-alpine
+    container_name: cvat_db
+    restart: always
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_DB: cvat
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - cvat_db:/var/lib/postgresql/data
+    networks:
+      - cvat_network
+
+  cvat_redis_inmem:
+    image: redis:7.2.11-alpine
+    container_name: cvat_redis_inmem
+    restart: always
+    networks:
+      - cvat_network
+
+  cvat_redis_ondisk:
+    image: apache/kvrocks:2.15.0
+    container_name: cvat_redis_ondisk
+    restart: always
+    command: ["kvrocks", "-c", "/var/lib/kvrocks/kvrocks.conf", "--bind", "0.0.0.0", "--port", "6666", "--dir", "/var/lib/kvrocks/data"]
+    networks:
+      - cvat_network
+
+  cvat_opa:
+    image: openpolicyagent/opa:1.12.2
+    container_name: cvat_opa
+    restart: always
+    command:
+      - "run"
+      - "--server"
+      - "--addr=:8181"
+      - "--log-level=error"
+      - "--set=services.cvat.url=http://cvat_server:8080"
+      - "--set=bundles.cvat.service=cvat"
+      - "--set=bundles.cvat.resource=/api/auth/rules"
+      - "--set=bundles.cvat.polling.min_delay_seconds=5"
+      - "--set=bundles.cvat.polling.max_delay_seconds=15"
+    networks:
+      - cvat_network
+
+  # ==========================================
+  # 2. CVAT Server Backend & Workers
+  # ==========================================
+  cvat_server:
+    image: cvat/server:dev
+    container_name: cvat_server
+    restart: always
+    depends_on:
+      - cvat_redis_inmem
+      - cvat_redis_ondisk
+      - cvat_db
+      - cvat_opa
+    environment:
+      CVAT_REDIS_ONDISK_HOST: cvat_redis_ondisk
+      CVAT_REDIS_ONDISK_PORT: 6666
+      CVAT_REDIS_INMEM_HOST: cvat_redis_inmem
+      CVAT_REDIS_INMEM_PORT: 6379
+      CVAT_POSTGRES_HOST: cvat_db
+      CVAT_POSTGRES_PORT: 5432
+      CVAT_OPA_HOST: cvat_opa
+      CVAT_OPA_PORT: 8181
+      CVAT_HOST: localhost
+      ALLOWED_HOSTS: "*"
+      NUMPROCS: 2
+      CVAT_LOG_IMPORT_ERRORS: "true"
+      DJANGO_SETTINGS_MODULE: cvat.settings.production
+    volumes:
+      - cvat_data:/home/django/data
+      - cvat_keys:/home/django/keys
+      - cvat_logs:/home/django/logs
+    networks:
+      - cvat_network
+
+  cvat_worker_annotation:
+    image: cvat/server:dev
+    container_name: cvat_worker_annotation
+    restart: always
+    depends_on:
+      - cvat_server
+    environment:
+      CVAT_REDIS_ONDISK_HOST: cvat_redis_ondisk
+      CVAT_REDIS_ONDISK_PORT: 6666
+      CVAT_REDIS_INMEM_HOST: cvat_redis_inmem
+      CVAT_REDIS_INMEM_PORT: 6379
+      CVAT_POSTGRES_HOST: cvat_db
+      CVAT_POSTGRES_PORT: 5432
+      DJANGO_SETTINGS_MODULE: cvat.settings.production
+    command: ["run", "worker", "annotation"]
+    volumes:
+      - cvat_data:/home/django/data
+      - cvat_keys:/home/django/keys
+      - cvat_logs:/home/django/logs
+    networks:
+      - cvat_network
+
+  cvat_worker_export:
+    image: cvat/server:dev
+    container_name: cvat_worker_export
+    restart: always
+    depends_on:
+      - cvat_server
+    environment:
+      CVAT_REDIS_ONDISK_HOST: cvat_redis_ondisk
+      CVAT_REDIS_ONDISK_PORT: 6666
+      CVAT_REDIS_INMEM_HOST: cvat_redis_inmem
+      CVAT_REDIS_INMEM_PORT: 6379
+      CVAT_POSTGRES_HOST: cvat_db
+      CVAT_POSTGRES_PORT: 5432
+      DJANGO_SETTINGS_MODULE: cvat.settings.production
+    command: ["run", "worker", "export"]
+    volumes:
+      - cvat_data:/home/django/data
+      - cvat_keys:/home/django/keys
+      - cvat_logs:/home/django/logs
+    networks:
+      - cvat_network
+
+  cvat_worker_import:
+    image: cvat/server:dev
+    container_name: cvat_worker_import
+    restart: always
+    depends_on:
+      - cvat_server
+    environment:
+      CVAT_REDIS_ONDISK_HOST: cvat_redis_ondisk
+      CVAT_REDIS_ONDISK_PORT: 6666
+      CVAT_REDIS_INMEM_HOST: cvat_redis_inmem
+      CVAT_REDIS_INMEM_PORT: 6379
+      CVAT_POSTGRES_HOST: cvat_db
+      CVAT_POSTGRES_PORT: 5432
+      DJANGO_SETTINGS_MODULE: cvat.settings.production
+    command: ["run", "worker", "import"]
+    volumes:
+      - cvat_data:/home/django/data
+      - cvat_keys:/home/django/keys
+      - cvat_logs:/home/django/logs
+    networks:
+      - cvat_network
+
+  cvat_worker_chunks:
+    image: cvat/server:dev
+    container_name: cvat_worker_chunks
+    restart: always
+    depends_on:
+      - cvat_server
+    environment:
+      CVAT_REDIS_ONDISK_HOST: cvat_redis_ondisk
+      CVAT_REDIS_ONDISK_PORT: 6666
+      CVAT_REDIS_INMEM_HOST: cvat_redis_inmem
+      CVAT_REDIS_INMEM_PORT: 6379
+      CVAT_POSTGRES_HOST: cvat_db
+      CVAT_POSTGRES_PORT: 5432
+      DJANGO_SETTINGS_MODULE: cvat.settings.production
+    command: ["run", "worker", "chunks"]
+    volumes:
+      - cvat_data:/home/django/data
+      - cvat_keys:/home/django/keys
+      - cvat_logs:/home/django/logs
+    networks:
+      - cvat_network
+
+  # ==========================================
+  # 3. CVAT Frontend UI
+  # ==========================================
+  cvat_ui:
+    image: cvat/ui:dev
+    container_name: cvat_ui
+    restart: always
+    depends_on:
+      - cvat_server
+    networks:
+      - cvat_network
+
+  # ==========================================
+  # 4. CVAT Nginx Gateway (Port 8080)
+  # ==========================================
+  cvat_gateway:
+    image: nginx:alpine
+    container_name: cvat_gateway
+    restart: always
+    depends_on:
+      - cvat_ui
+      - cvat_server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./source-tool/qc-bdd100k/infra/local-cvat-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - cvat_network
+
+  # ==========================================
+  # 5. QC Studio Backend (Port 8000)
+  # ==========================================
+  qc_api:
+    build:
+      context: ./source-tool/qc-bdd100k
+      dockerfile: Dockerfile
+    container_name: qc_api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: 8000
+      CVAT_URL: http://cvat_gateway:8080
+      CVAT_ACCESS_TOKEN: ${CVAT_ACCESS_TOKEN:-}
+      QC_ALLOW_REMOTE_MODEL_ENDPOINTS: "true"
+      QC_BBOX_MODEL_URL: http://nuclio-nuclio-custom-yolov8:8080/
+      QC_SEGMENTATION_MODEL_URL: http://nuclio-nuclio-custom-dinov3-seg:8080/
+      QC_DINO_BBOX_MODEL_URL: http://nuclio-nuclio-custom-dinov3-detect:8080/
+    volumes:
+      - qc_data:/app/.qc-data
+    networks:
+      - cvat_network
+
+  # ==========================================
+  # 6. QC Studio Frontend Blazor (Port 5000)
+  # ==========================================
+  qc_ui:
+    build:
+      context: ./source-tool/qc-bdd100k/frontend/BlazorApp
+      dockerfile: Dockerfile
+    container_name: qc_ui
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      QcApi__BaseUrl: http://qc_api:8000
+      ASPNETCORE_URLS: http://+:5000
+      ASPNETCORE_ENVIRONMENT: Production
+    depends_on:
+      - qc_api
+    networks:
+      - cvat_network
+
+networks:
+  cvat_network:
+    name: cvat_cvat
+    driver: bridge
+
+volumes:
+  cvat_data:
+  cvat_keys:
+  cvat_logs:
+  cvat_db:
+  qc_data:

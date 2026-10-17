@@ -1,37 +1,61 @@
-# BP — QC Studio 2D
+# QC Studio 2D
 
-Công cụ kiểm soát chất lượng nhãn ảnh cho BDD100K, có hai mode đang hỗ trợ trong giao diện: **BBox detection** và **semantic segmentation**. Repository này chứa Blazor frontend, Python/FastAPI backend, adapter tới local CVAT/Nuclio models, CVAT issue handoff tùy chọn và các pack kiểm tra nhỏ có provenance.
+> Công cụ hỗ trợ rà soát annotation BBox và semantic segmentation 2D cho dữ liệu giao thông. Rule findings và model disagreements đều là **candidate để reviewer xác minh**; chúng không tự chứng minh nhãn sai hoặc đạt chuẩn.
 
-## Bắt đầu trên Windows
+## Hồ sơ dự án
 
-1. Cài Python 3.10+ và .NET 10 SDK (hoặc dùng SDK portable `.tools/dotnet` có sẵn trong workspace).
-2. Cài backend packages: `python -m pip install -r source-tool/qc-bdd100k/requirements.txt`.
-3. Từ PowerShell tại thư mục `BP`, chạy `Set-ExecutionPolicy -Scope Process Bypass` nếu bị chặn, sau đó `./run_qc_studio.ps1`.
-4. Mở **http://127.0.0.1:5000/**. API ở `http://127.0.0.1:8000`; dừng ứng dụng bằng `./stop_qc_studio.ps1`.
+- **Mã đề tài:** N2-04A
+- **Tên:** QC Studio 2D — QC tự động cho BBox và Segmentation 2D
+- **Mô tả:** Nạp nhãn và ảnh, kiểm tra một số điều kiện hình học, so sánh với model khi provider/weights có sẵn, sắp xếp frame cần review và xuất báo cáo.
+- **Thumbnail:** [thumbnail.jpg](thumbnail.jpg)
+- **Live URL:** Chưa deploy. Xem [hướng dẫn deploy Render](docs/DEPLOYMENT_GUIDE.md); chỉ bổ sung URL sau khi đã deploy và kiểm tra bằng trình duyệt.
 
-Hướng dẫn từng bước: [INSTALL_AND_USE.md](INSTALL_AND_USE.md). Lệnh chạy nhanh: [RUN_GUIDE.md](RUN_GUIDE.md).
+## Chạy nhanh trên máy local
+
+Yêu cầu: Python 3.11 trở lên. Không cần model để dùng parser và rule checks. Model local, CVAT và Gemini là tích hợp tùy chọn.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python backend/app.py
+```
+
+Mở [http://127.0.0.1:8000](http://127.0.0.1:8000); API docs ở `/docs`. Dùng `run_qc_studio.bat` hoặc `run_qc_studio.ps1` để khởi chạy đầy đủ cả giao diện Blazor (.NET 10) ở cổng 5000 và Backend API ở cổng 8000. Cấu hình Docker/Render đóng gói sẵn giao diện Blazor làm web UI chính.
+
+### Chạy kiểm tra
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m pytest backend -q
+python backend/test_qc_system.py
+```
+
+Kết quả gần nhất và phạm vi kiểm tra phải được ghi trong [docs/TESTING.md](docs/TESTING.md). Không dùng test fixture làm số đo độ chính xác thực tế.
+
+## Dữ liệu và model
+
+- Bộ nhãn demo BDD100K nằm trong `demo_data/`; ảnh đi kèm nằm trong `demo_data/images/`. Đây là dữ liệu mẫu để chạy thử, không phải tập gold độc lập. [CSV snapshot của lần chạy 20 frame](demo_data/real_data_qc_report.csv).
+- Tải dữ liệu BDD100K từ nguồn chính thức và làm theo [hướng dẫn dữ liệu](docs/DATASET_SETUP.md) nếu cần benchmark lớn hơn. Báo cáo phải ghi rõ nguồn, phiên bản, hash, lệnh và giới hạn đánh giá.
+- Trọng số `.pt` không được commit vào Git. `requirements.txt` không cài PyTorch/Ultralytics; model inference chỉ hoạt động khi đã cài dependency, có weights phù hợp hoặc cấu hình provider local. Khi thiếu provider, xem số frame bị skip; không diễn giải là model đã đánh giá.
+- Gemini gửi ảnh đã chọn và thông tin liên quan lên dịch vụ Google khi được bật. Không gửi dữ liệu nhạy cảm lên bản public.
+
+## Deploy
+
+Cấu hình `Dockerfile` và `render.yaml` đóng gói toàn diện cả Blazor Web App (.NET 10) và Python FastAPI backend trong cùng một container. Bản public bật `QC_PUBLIC_DEMO=true`: các chức năng ghi credential Gemini/CVAT bị khóa; filesystem của dịch vụ không phải nơi lưu dữ liệu bền vững. Xem [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) trước khi tạo dịch vụ.
 
 ## Tài liệu
 
-- [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) — kiến trúc hiện tại/mục tiêu, quyết định thiết kế, bảo mật, giới hạn và roadmap.
-- [PROJECT_FLOW.md](PROJECT_FLOW.md) — luồng nghiệp vụ và trạng thái frontend/backend.
-- [FLOW_REVIEW.md](FLOW_REVIEW.md) — audit flow trong slide, rủi ro và acceptance checks.
-- [AI_RECOMMENDATIONS.md](AI_RECOMMENDATIONS.md) — model, Gemini/privacy, CVAT handoff và nguồn research.
-- [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) — thay đổi, kiểm chứng và việc còn lại.
-- [source-tool/qc-bdd100k/README.md](source-tool/qc-bdd100k/README.md) — chi tiết kỹ thuật ứng dụng.
+- [Kiến trúc](docs/ARCHITECTURE.md)
+- [Đặc tả](docs/SPECIFICATION.md)
+- [Kiểm thử và kết quả đo](docs/TESTING.md)
+- [Thiết lập dữ liệu](docs/DATASET_SETUP.md)
+- [Nhật ký tuần](weekly-logs/README.md)
+- [Kịch bản demo](docs/VIDEO_DEMO_SCRIPT.md)
 
-## Dữ liệu walk-through
+## Giới hạn cần nêu khi trình bày
 
-`test-data/bdd100k-walkthroughs/` có bốn pack disjoint, mỗi pack 50 frame BDD100K thật, kèm manifest/checksum: hai pack BBox và hai semantic segmentation. Để theo hướng dẫn chọn pack 01 (BBox) hoặc 03 (segmentation). Pack 02/04 bổ sung rule-candidate/class coverage. Chúng kiểm tra parsing, overlay, queue và export; chúng **không phải gold set đã adjudicate** và không chứng minh nhãn sai. Xem [walkthrough README](test-data/bdd100k-walkthroughs/README.md).
-
-`poly2d` detection reference được tách riêng trong `test-data/bdd100k-poly2d-reference`; không dùng nó thay mask segmentation. Không cần đọc toàn bộ archive để chạy các walk-through.
-
-## Trạng thái và giới hạn
-
-- QC API gọi detector/mask providers cục bộ khi endpoint khả dụng. Trạng thái thay đổi theo lúc chạy; kiểm tra `/api/health` và `/api/models`. Lần xác minh gần nhất: API/UI chạy, Docker Engine không kết nối được trong phiên này, model endpoints unavailable và CVAT credentials chưa cấu hình.
-- Không có Gemini/hosted VLM call trong build này. Model disagreement chỉ là candidate; chỉ reviewer mới quyết định.
-- Workspace/guideline version lưu trong SQLite. Kết quả run và reviewer decisions chưa persist sau refresh.
-- Đây là local MVP, chưa có authentication, multi-user isolation, resumable uploads hay hạ tầng production. Không public port 5000/8000 hoặc dùng như dịch vụ LAN/cloud.
-- Dockerfile hiện chỉ đóng gói backend API, không phải toàn bộ sản phẩm Blazor + API + CVAT + models.
-
-Kiểm tra Python logic: `python source-tool/qc-bdd100k/backend/test_qc_system.py` và `python source-tool/qc-bdd100k/backend/test_qc_pipeline_normalization.py`. Hướng dẫn build frontend và chạy model packs nằm trong [INSTALL_AND_USE.md](INSTALL_AND_USE.md).
+- “Không có cờ” nghĩa là không điều kiện nào trong cấu hình hiện tại phát hiện vấn đề; không đồng nghĩa dữ liệu sạch.
+- LQS là điểm heuristic nội bộ, chưa được hiệu chỉnh trên gold set.
+- Chưa báo cáo precision/recall, Recall@20 hoặc phần trăm tiết kiệm thời gian nếu chưa chạy đối chiếu độc lập có adjudication.
+- Tích hợp CVAT cần thử trên job test trước khi dùng job thật. Bản public chưa có đăng nhập; chỉ dùng dữ liệu demo không nhạy cảm.

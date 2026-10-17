@@ -71,12 +71,14 @@
    - Đã có cơ chế liên kết và chuyển giao dữ liệu cảnh báo sang hệ thống quản lý công việc bên ngoài khi cần thiết.
 
 4. **Về mặt thử nghiệm thực tế (Testing & Experimentation):**
-   - Đã chạy kiểm thử thành công toàn bộ luồng quy trình từ khâu nạp tập dữ liệu mẫu, quét lỗi tự động, hiển thị kết quả trên giao diện cho đến xuất tệp báo cáo tổng hợp.
-   - Các gói dữ liệu mẫu bước đầu cho kết quả kiểm tra khả quan, đáp ứng đúng theo các kịch bản đã đề ra.
+   - Đã chạy pipeline QC trên 50 record BDD100K bằng script. Luồng HTTP upload/UI chưa được xác minh end-to-end trong môi trường hiện tại.
+   - Các gói dữ liệu mẫu dùng để walkthrough; chưa có tiêu chí gold độc lập để kết luận chất lượng finding.
 
 ---
 
 ## 4. CÁC CÔNG VIỆC ĐANG TRONG GIAI ĐOẠN THỬ NGHIỆM & TINH CHỈNH
+
+> Cập nhật kiểm chứng ngày 18/10/2026: toàn bộ kiểm thử unit/parser và 5 kiểm thử upload HTTP (kèm kiểm tra giới hạn kích thước payload không gây treo) đều đã pass theo [`docs/TESTING.md`](../docs/TESTING.md); 8/8 smoke logic assertions trong `test_qc_system.py` đã pass. CVAT live trên job thật và public URL trên Render cần được xác nhận khi deploy.
 
 - **Đo lường và tối ưu thời gian xử lý:** Đang thử nghiệm xử lý đồng thời với khối lượng dữ liệu lớn hơn để theo dõi hiệu suất và dung lượng bộ nhớ.
 - **Hiệu chỉnh độ nhạy của cảnh báo:** Đang rà soát lại các tiêu chí cảnh báo tự động nhằm hạn chế tình trạng báo nhầm (false positives) đối với các trường hợp dữ liệu hợp lệ.
