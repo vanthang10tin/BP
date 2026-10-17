@@ -71,16 +71,48 @@
                         <div class="file-meta"><span><i class="bi bi-bookmark-check"></i> Clauses cited in issues</span><button class="text-button" @onclick="OpenGuideline">Edit current guideline <i class="bi bi-arrow-up-right"></i></button></div>
                     </article>
                     <article class="setup-card cvat-config-card">
-                        <div class="card-head"><span class="card-icon mint"><i class="bi bi-plug"></i></span><span class="card-kicker">BACKEND INTEGRATION</span><span class="required">REQUIRED</span></div>
+                        <div class="card-head"><span class="card-icon mint"><i class="bi bi-plug"></i></span><span class="card-kicker">CVAT INTEGRATION</span><span class="required">CLOUD & LOCAL</span></div>
                         <h2>Connect to CVAT</h2>
-                        <p>Save connection settings to the backend-only <code>.env</code> file. The access token is not sent back to this page.</p>
-                        <label>CVAT_URL<input type="url" @bind="CvatUrl" placeholder="http://127.0.0.1:8080" autocomplete="url" /></label>
-                        <label>CVAT_ACCESS_TOKEN<input type="password" @bind="CvatAccessToken" placeholder="Paste your CVAT access token" autocomplete="new-password" /></label>
-                        <div class="cvat-config-footer">
-                            <button class="primary-button" disabled="@(IsCvatConfigSaving || string.IsNullOrWhiteSpace(CvatUrl) || string.IsNullOrWhiteSpace(CvatAccessToken))" @onclick="SaveCvatConfig">
-                                @(IsCvatConfigSaving ? "Saving…" : "Save CVAT settings") <i class="bi bi-shield-lock"></i>
+                        <p>Hỗ trợ kết nối cả <b>Cloud CVAT (cvat.ai)</b> lẫn <b>Local CVAT</b> qua Personal Access Token.</p>
+
+                        <div class="cvat-presets">
+                            <button type="button" class="preset-btn @(IsCvatAi ? "active" : "")" @onclick="SelectCvatAiPreset">
+                                <i class="bi bi-cloud-check"></i> Cloud CVAT (cvat.ai)
                             </button>
-                            <small>Written only to backend/.env</small>
+                            <button type="button" class="preset-btn @(IsLocalCvat ? "active" : "")" @onclick="SelectLocalCvatPreset">
+                                <i class="bi bi-pc-display"></i> Local CVAT (localhost:8080)
+                            </button>
+                        </div>
+
+                        @if (IsCvatAi)
+                        {
+                            <div class="cvat-guide-box">
+                                <div style="font-weight:600;margin-bottom:4px"><i class="bi bi-key-fill" style="color:#a78bfa"></i> Cách lấy Token trên cvat.ai:</div>
+                                <ol>
+                                    <li>Đăng nhập <a href="https://app.cvat.ai" target="_blank" rel="noopener noreferrer">app.cvat.ai</a></li>
+                                    <li>Bấm <b>Avatar</b> góc phải trên ➔ chọn <b>Personal access tokens</b></li>
+                                    <li>Bấm <b>Create</b> ➔ đặt tên token ➔ Copy chuỗi token và dán vào ô bên dưới.</li>
+                                </ol>
+                            </div>
+                        }
+                        else if (IsLocalCvat)
+                        {
+                            <div class="cvat-guide-box warning">
+                                <i class="bi bi-exclamation-triangle"></i> <span>Local CVAT chỉ kết nối được khi chạy app trên máy cá nhân. Nếu bạn đang mở web từ Cloud (Render), hãy dùng <b>Cloud CVAT (cvat.ai)</b> hoặc public tunnel.</span>
+                            </div>
+                        }
+
+                        <label>CVAT_URL
+                            <input type="url" @bind="CvatUrl" placeholder="https://app.cvat.ai" autocomplete="url" />
+                        </label>
+                        <label>CVAT_ACCESS_TOKEN (Personal Access Token)
+                            <input type="password" @bind="CvatAccessToken" placeholder="Dán mã Token từ CVAT vào đây" autocomplete="new-password" />
+                        </label>
+                        <div class="cvat-config-footer">
+                            <button class="primary-button" disabled="@(IsCvatConfigSaving || string.IsNullOrWhiteSpace(CvatUrl) || (string.IsNullOrWhiteSpace(CvatAccessToken) && string.IsNullOrWhiteSpace(CvatActiveToken)))" @onclick="SaveCvatConfig">
+                                @(IsCvatConfigSaving ? "Connecting…" : "Connect & Save CVAT") <i class="bi bi-shield-lock"></i>
+                            </button>
+                            <small>@(CvatReachable ? "Connected" : "Token is kept secure in session")</small>
                         </div>
                         @if (!string.IsNullOrWhiteSpace(CvatConfigMessage))
                         {
@@ -89,17 +121,23 @@
                     </article>
                     <article class="setup-card image-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-images"></i></span><span class="card-kicker">@(Mode == "segmentation" ? "REQUIRED IMAGE + MASK PAIR" : "IMAGE INPUT")</span></div><h2>Frame images & masks</h2><p>@(Mode == "segmentation" ? "Attach JPGs, train-ID masks for metric comparison, and color masks for display." : "Attach matching images for local model inference. BDD100K archive lookup is a fallback.")</p><label class="compact-upload" for="images-file"><InputFile id="images-file" OnChange="OnImagesSelected" accept="image/*" multiple /><i class="bi bi-plus-lg"></i><span>@(ImageFiles.Count == 0 ? "Add images" : $"{ImageFiles.Count} images attached")</span><small>match by filename</small></label>@if (Mode == "segmentation") { <label class="compact-upload mask-upload" for="index-masks-file"><InputFile id="index-masks-file" OnChange="OnIndexMasksSelected" accept="image/png" multiple /><i class="bi bi-grid-3x3"></i><span>@(IndexMaskFiles.Count == 0 ? "Add train-ID masks" : $"{IndexMaskFiles.Count} index masks")</span><small>PNG · masks/index/</small></label><label class="compact-upload mask-upload" for="masks-file"><InputFile id="masks-file" OnChange="OnMasksSelected" accept="image/png" multiple /><i class="bi bi-layers"></i><span>@(MaskFiles.Count == 0 ? "Add color masks" : $"{MaskFiles.Count} color masks")</span><small>PNG · masks/color/</small></label> }</article>
                     <article class="setup-card image-card">
-                        <div class="card-head"><span class="card-icon mint"><i class="bi bi-kanban"></i></span><span class="card-kicker">LOCAL CVAT REVIEW</span></div>
+                        <div class="card-head"><span class="card-icon mint"><i class="bi bi-kanban"></i></span><span class="card-kicker">CVAT REVIEW & JOBS</span></div>
                         <h2>Select a CVAT job</h2>
-                        <p>Choose a job from the connected local CVAT instance to open its review page in a new tab.</p>
-                        <div class="file-meta"><span><i class="bi bi-plug"></i> @CvatStateLabel</span></div>
+                        <p>Chọn một Job từ instance CVAT đã kết nối để mở trang review hoặc nạp trực tiếp vào workspace.</p>
+                        <div class="file-meta">
+                            <span><i class="bi bi-plug"></i> @CvatStateLabel</span>
+                            @if (!string.IsNullOrWhiteSpace(CvatUsername))
+                            {
+                                <span><i class="bi bi-person-check"></i> @CvatUsername</span>
+                            }
+                        </div>
                         @if (!CvatReachable)
                         {
                             <small>@(string.IsNullOrWhiteSpace(CvatConnectionDetail) ? "Connect to CVAT above and save its settings to load jobs." : CvatConnectionDetail)</small>
                         }
                         else if (CvatJobList.Count == 0)
                         {
-                            <small>No CVAT jobs found. Refresh after jobs are available.</small>
+                            <small>Không tìm thấy Job nào trên CVAT. Hãy kiểm tra quyền của Token hoặc bấm 'Refresh jobs'.</small>
                         }
                         else
                         {
@@ -117,13 +155,17 @@
                         }
                         <div class="cvat-config-footer">
                             <button class="outline-button" disabled="@(!CvatReachable || IsBusy)" @onclick="LoadCvatJobs"><i class="bi bi-arrow-clockwise"></i> Refresh jobs</button>
+                            @if (CvatReachable && CvatJobId > 0)
+                            {
+                                <button class="outline-button" disabled="@IsBusy" @onclick="PullJobFromCvat" style="color:#6ee7b7;border-color:#059669"><i class="bi bi-cloud-arrow-down"></i> Nạp Job vào QC</button>
+                            }
                             @if (CvatReachable && CvatSelectedJobUrl is not null)
                             {
-                                <a class="primary-button" href="@CvatSelectedJobUrl" target="_blank" rel="noopener noreferrer"><i class="bi bi-arrow-right"></i> Go to Review</a>
+                                <a class="primary-button" href="@CvatSelectedJobUrl" target="_blank" rel="noopener noreferrer"><i class="bi bi-arrow-right"></i> Mở trên CVAT</a>
                             }
                             else
                             {
-                                <button class="primary-button" disabled><i class="bi bi-arrow-right"></i> Go to Review</button>
+                                <button class="primary-button" disabled><i class="bi bi-arrow-right"></i> Mở trên CVAT</button>
                             }
                         </div>
                     </article>
@@ -628,8 +670,15 @@
     private int CvatJobId;
     private int CvatFrameOffset;
     private int CvatAssigneeId;
-    private string CvatUrl = "";
+    private string CvatUrl = "https://app.cvat.ai";
     private string CvatAccessToken = "";
+    private string CvatActiveToken = "";
+    private string? CvatUsername;
+    private string? CvatVersion;
+    private bool IsCvatAi => CvatUrl.Contains("cvat.ai", StringComparison.OrdinalIgnoreCase);
+    private bool IsLocalCvat => CvatUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) || CvatUrl.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+    private void SelectCvatAiPreset() { CvatUrl = "https://app.cvat.ai"; }
+    private void SelectLocalCvatPreset() { CvatUrl = "http://127.0.0.1:8080"; }
     private string? CvatConfigMessage;
     private bool CvatConfigHasError;
     private bool IsCvatConfigSaving;
@@ -746,30 +795,62 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private HttpRequestMessage CreateCvatRequest(HttpMethod method, string path, object? jsonBody = null)
+    {
+        var req = new HttpRequestMessage(method, path);
+        if (!string.IsNullOrWhiteSpace(CvatUrl))
+        {
+            req.Headers.TryAddWithoutValidation("X-CVAT-Url", CvatUrl.Trim());
+        }
+        var token = !string.IsNullOrWhiteSpace(CvatActiveToken) ? CvatActiveToken : CvatAccessToken;
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            req.Headers.TryAddWithoutValidation("X-CVAT-Token", token.Trim());
+        }
+        if (jsonBody != null)
+        {
+            req.Content = JsonContent.Create(jsonBody);
+        }
+        return req;
+    }
+
     private async Task RefreshCvatConnection()
     {
         try
         {
-            var cvat = await Api.GetFromJsonAsync<JsonElement>("/api/cvat/status");
-            CvatReachable = GetBool(cvat, "reachable");
-            CvatConnectionDetail = CvatReachable ? null : GetString(cvat, "detail", "CVAT connection failed.");
+            using var req = CreateCvatRequest(HttpMethod.Get, "/api/cvat/status");
+            using var res = await Api.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+            {
+                CvatReachable = false;
+                CvatJobList.Clear();
+                CvatStateLabel = $"CVAT HTTP {(int)res.StatusCode}";
+                CvatConnectionDetail = await res.Content.ReadAsStringAsync();
+                return;
+            }
+            using var cvat = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            CvatReachable = GetBool(cvat.RootElement, "reachable");
+            CvatConnectionDetail = CvatReachable ? null : GetString(cvat.RootElement, "detail", "CVAT connection failed.");
+            CvatUsername = GetString(cvat.RootElement, "username", "");
+            CvatVersion = GetString(cvat.RootElement, "version", "");
             if (CvatReachable)
             {
-                CvatStateLabel = "CVAT CONNECTED";
+                var userSuffix = !string.IsNullOrWhiteSpace(CvatUsername) ? $" · {CvatUsername}" : "";
+                CvatStateLabel = $"CONNECTED{(IsCvatAi ? " (cvat.ai)" : "")}{userSuffix}";
                 await LoadCvatJobs();
             }
             else
             {
                 CvatJobList.Clear();
-                CvatStateLabel = GetBool(cvat, "configured") ? "TOKEN / NETWORK ISSUE" : "TOKEN REQUIRED";
+                CvatStateLabel = GetBool(cvat.RootElement, "configured") ? "TOKEN / NETWORK ISSUE" : "TOKEN REQUIRED";
             }
         }
-        catch
+        catch (Exception ex)
         {
             CvatReachable = false;
             CvatJobList.Clear();
             CvatStateLabel = "CVAT STATUS UNKNOWN";
-            CvatConnectionDetail = "Could not read CVAT connection status from the QC backend.";
+            CvatConnectionDetail = $"Could not read CVAT status: {ex.Message}";
         }
     }
 
@@ -1271,14 +1352,23 @@
     {
         try
         {
-            var res = await Api.GetFromJsonAsync<JsonElement>("/api/cvat/jobs");
-            CvatJobList = GetArray(res, "jobs");
+            using var req = CreateCvatRequest(HttpMethod.Get, "/api/cvat/jobs");
+            using var res = await Api.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+            {
+                var err = await res.Content.ReadAsStringAsync();
+                StatusMessage = $"Không lấy được job từ CVAT: {err}";
+                HasError = true;
+                return;
+            }
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            CvatJobList = GetArray(doc.RootElement, "jobs");
             if (CvatJobId <= 0 && CvatJobList.Count > 0)
             {
                 CvatJobId = GetInt(CvatJobList[0], "id", 0);
                 await LoadCvatFrameMap();
             }
-            StatusMessage = $"Đã tải {CvatJobList.Count} job từ CVAT.";
+            StatusMessage = $"Đã tải {CvatJobList.Count} job từ CVAT ({(IsCvatAi ? "cvat.ai" : "CVAT instance")}).";
             HasError = false;
         }
         catch (Exception ex)
@@ -1293,6 +1383,30 @@
         IsCvatConfigSaving = true;
         CvatConfigMessage = null;
         CvatConfigHasError = false;
+
+        // Auto-detect if user pasted a full CVAT Job URL (e.g. https://app.cvat.ai/tasks/12/jobs/34)
+        if (!string.IsNullOrWhiteSpace(CvatUrl))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(CvatUrl, @"(https?://[^/]+)/.*jobs/(\d+)");
+            if (match.Success)
+            {
+                CvatUrl = match.Groups[1].Value;
+                if (int.TryParse(match.Groups[2].Value, out var parsedJid))
+                {
+                    CvatJobId = parsedJid;
+                }
+            }
+            else if (CvatUrl.EndsWith("/api", StringComparison.OrdinalIgnoreCase))
+            {
+                CvatUrl = CvatUrl[..^4].TrimEnd('/');
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(CvatAccessToken))
+        {
+            CvatActiveToken = CvatAccessToken.Trim();
+        }
+
         try
         {
             using var response = await Api.PostAsJsonAsync("/api/cvat/config", new
@@ -1300,6 +1414,7 @@
                 cvat_url = CvatUrl,
                 cvat_access_token = CvatAccessToken
             });
+
             if (!response.IsSuccessStatusCode)
             {
                 var responseText = await response.Content.ReadAsStringAsync();
@@ -1310,16 +1425,34 @@
                     detail = GetString(error.RootElement, "detail", responseText);
                 }
                 catch (JsonException) { }
+
+                // If public demo blocked .env write (403), we still have CvatActiveToken in memory for this session!
+                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    await RefreshCvatConnection();
+                    if (CvatReachable)
+                    {
+                        CvatConfigMessage = "Chế độ Cloud Demo: Token đã được kích hoạt cho phiên làm việc này (không lưu vào .env để bảo mật).";
+                        CvatConfigHasError = false;
+                    }
+                    else
+                    {
+                        CvatConfigMessage = $"Token kích hoạt cho phiên làm việc, nhưng kết nối thất bại: {CvatConnectionDetail}";
+                        CvatConfigHasError = true;
+                    }
+                    return;
+                }
+
                 CvatConfigMessage = $"Could not save CVAT settings: {detail}";
                 CvatConfigHasError = true;
                 return;
             }
 
-            CvatAccessToken = "";
             await RefreshCvatConnection();
+            var targetName = IsCvatAi ? "cvat.ai" : "CVAT";
             CvatConfigMessage = CvatReachable
-                ? "CVAT settings saved and the local instance is connected."
-                : $"CVAT settings were saved, but the connection failed: {CvatConnectionDetail}";
+                ? $"Kết nối thành công tới {targetName}! {(string.IsNullOrWhiteSpace(CvatUsername) ? "" : $"Tài khoản: {CvatUsername}")}"
+                : $"Đã lưu thiết lập, nhưng chưa kết nối được tới {targetName}: {CvatConnectionDetail}";
             CvatConfigHasError = !CvatReachable;
         }
         catch (HttpRequestException)
@@ -1335,6 +1468,72 @@
         finally
         {
             IsCvatConfigSaving = false;
+        }
+    }
+    private async Task PullJobFromCvat()
+    {
+        if (CvatJobId <= 0)
+        {
+            StatusMessage = "Vui lòng chọn hoặc nhập Job ID trước khi nạp.";
+            HasError = true;
+            return;
+        }
+        IsBusy = true;
+        StatusMessage = $"Đang nạp annotations và frame metadata từ CVAT Job #{CvatJobId}...";
+        try
+        {
+            var payload = new
+            {
+                cvat_url = CvatUrl,
+                cvat_access_token = !string.IsNullOrWhiteSpace(CvatActiveToken) ? CvatActiveToken : CvatAccessToken,
+                download_images = true,
+                max_frames = 100
+            };
+            using var req = CreateCvatRequest(HttpMethod.Post, $"/api/cvat/jobs/{CvatJobId}/pull", payload);
+            using var res = await Api.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+            {
+                var err = await res.Content.ReadAsStringAsync();
+                var detail = err;
+                try
+                {
+                    using var error = JsonDocument.Parse(err);
+                    detail = GetString(error.RootElement, "detail", err);
+                }
+                catch (JsonException) { }
+                throw new InvalidOperationException(detail);
+            }
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            var frames = GetArray(doc.RootElement, "frames");
+            var frameMap = GetProperty(doc.RootElement, "frame_map");
+            if (frameMap.ValueKind == JsonValueKind.Object)
+            {
+                CvatFrameMap = frameMap.EnumerateObject().ToDictionary(p => Path.GetFileName(p.Name), p => p.Value.GetInt32(), StringComparer.OrdinalIgnoreCase);
+                CvatMappingFileName = $"CVAT Job #{CvatJobId} metadata";
+            }
+            var imagesProp = GetProperty(doc.RootElement, "images");
+            if (imagesProp.ValueKind == JsonValueKind.Object)
+            {
+                ImageFiles.Clear();
+                foreach (var img in imagesProp.EnumerateObject())
+                {
+                    ImageFiles[img.Name] = img.Value.GetString() ?? "";
+                }
+            }
+            LabelsJson = doc.RootElement.GetProperty("frames").Clone();
+            LabelFileName = $"CVAT Job #{CvatJobId} ({frames.Count} frames)";
+            WorkspaceName = GetString(doc.RootElement, "task_name", $"CVAT Job #{CvatJobId}");
+            StatusMessage = GetString(doc.RootElement, "message", $"Đã nạp {frames.Count} frame từ CVAT Job #{CvatJobId}. Bạn có thể bấm 'Run local QC' để bắt đầu kiểm tra!");
+            HasError = false;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Không kéo được dữ liệu từ CVAT: {ex.Message}";
+            HasError = true;
+        }
+        finally
+        {
+            IsBusy = false;
         }
     }
     private async Task SaveGeminiConfig()
@@ -1386,8 +1585,15 @@
         if (CvatJobId <= 0) return;
         try
         {
-            var result = await Api.GetFromJsonAsync<JsonElement>($"/api/cvat/jobs/{CvatJobId}/frame-map");
-            CvatFrameMap = GetProperty(result, "frame_map").EnumerateObject().ToDictionary(p => Path.GetFileName(p.Name), p => p.Value.GetInt32(), StringComparer.OrdinalIgnoreCase);
+            using var req = CreateCvatRequest(HttpMethod.Get, $"/api/cvat/jobs/{CvatJobId}/frame-map");
+            using var res = await Api.SendAsync(req);
+            if (!res.IsSuccessStatusCode)
+            {
+                var err = await res.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(err);
+            }
+            using var result = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            CvatFrameMap = GetProperty(result.RootElement, "frame_map").EnumerateObject().ToDictionary(p => Path.GetFileName(p.Name), p => p.Value.GetInt32(), StringComparer.OrdinalIgnoreCase);
             CvatMappingFileName = $"CVAT Job {CvatJobId} metadata";
             CvatStateLabel = "MAPPING LOADED";
             StatusMessage = $"Đã nạp chính xác {CvatFrameMap.Count} frame metadata từ CVAT Job #{CvatJobId}.";
@@ -1412,6 +1618,8 @@
         {
             var payload = new
             {
+                cvat_url = CvatUrl,
+                cvat_access_token = !string.IsNullOrWhiteSpace(CvatActiveToken) ? CvatActiveToken : CvatAccessToken,
                 job_id = CvatJobId,
                 frame_offset = CvatFrameOffset,
                 frame_map = CvatFrameMap,
@@ -1423,7 +1631,8 @@
                 target_state = TargetState,
                 include_all_unreviewed = IncludeAllUnreviewed
             };
-            using var response = await Api.PostAsJsonAsync("/api/cvat/push-issues", payload);
+            using var req = CreateCvatRequest(HttpMethod.Post, "/api/cvat/push-issues", payload);
+            using var response = await Api.SendAsync(req);
             var body = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)
             {
