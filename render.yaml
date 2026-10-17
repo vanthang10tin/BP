@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: qc-studio-2d-blazor
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /
+    envVars:
+      - key: QC_PUBLIC_DEMO
+        value: "true"
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
