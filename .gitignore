@@ -32,7 +32,9 @@ venv.bak/
 .env
 .env.local
 .env.*.local
-source-tool/qc-bdd100k/backend/GEMINI_API_KEY.txt
+backend/GEMINI_API_KEY.txt
+*.key
+*.pem
 
 # Model weights & checkpoints (large binary weights)
 *.pt
@@ -40,6 +42,7 @@ source-tool/qc-bdd100k/backend/GEMINI_API_KEY.txt
 *.onnx
 *.weights
 *.bin
+*.safetensors
 
 # IDEs & Editors
 .vscode/
@@ -47,13 +50,6 @@ source-tool/qc-bdd100k/backend/GEMINI_API_KEY.txt
 *.swp
 *.swo
 *~
-
-# .NET build outputs and user-specific files
-**/bin/
-**/obj/
-*.user
-*.suo
-.tools/
 
 # Operating System Files
 .DS_Store
@@ -67,4 +63,14 @@ report.json
 cleaned_labels.json
 tmp/
 .pytest_cache/
-source-tool/qc-bdd100k/.qc-data/
+.qc-data/
+backend/.qc-data/
+
+# .NET / C# build artifacts
+[Bb]in/
+[Oo]bj/
+**/[Bb]in/
+**/[Oo]bj/
+*.user
+*.suo
+
