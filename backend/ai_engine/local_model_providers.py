@@ -305,7 +305,7 @@ def _get_dinov3():
         if weights_override and os.path.exists(weights_override):
             model_path = weights_override
         else:
-            candidates = _resolve_model_candidates(["rtdetr-l.pt", "rtdetr-x.pt"])
+            candidates = _resolve_model_candidates(["rtdetr-x.pt", "rtdetr-l.pt"])
             model_path = candidates[0] if candidates else None
         if model_path:
             _DINOV3_MODEL = RTDETR(model_path)
@@ -347,7 +347,7 @@ def _get_sam2():
     _SAM2_LOAD_ATTEMPTED = True
     try:
         from ultralytics import SAM
-        candidates = _resolve_model_candidates(["sam2.1_b.pt", "sam2.1_l.pt", "sam2.1_t.pt"])
+        candidates = _resolve_model_candidates(["sam2.1_l.pt", "sam2.1_b.pt", "sam2.1_t.pt"])
         if candidates:
             _SAM2_MODEL = SAM(candidates[0])
     except Exception as exc:

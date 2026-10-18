@@ -63,7 +63,12 @@ class VisionEngine:
         import torch
         from ultralytics import YOLO, RTDETR
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.yolo = YOLO("yolo11x.pt").to(self.device)  # Flagship YOLO26x
+        for w in ["yolo26x.pt", "yolo11x.pt"]:
+            try:
+                self.yolo = YOLO(w).to(self.device)  # Flagship YOLO26x
+                break
+            except Exception:
+                continue
         for w in ["rtdetr-x.pt", "rtdetr-l.pt"]:
             try:
                 self.dino = RTDETR(w).to(self.device)  # Flagship Extra-Large DINO Transformer Detector
@@ -88,7 +93,12 @@ class VisionEngine:
     def load_yolo_seg(self):
         if self.yolo_seg is None:
             from ultralytics import YOLO
-            self.yolo_seg = YOLO("yolo11x-seg.pt").to(self.device)
+            for w in ["yolo26x-seg.pt", "yolo11x-seg.pt"]:
+                try:
+                    self.yolo_seg = YOLO(w).to(self.device)  # Flagship YOLO26x-Seg
+                    break
+                except Exception:
+                    continue
 
     def load_dino(self):
         if self.dino_model is None:
