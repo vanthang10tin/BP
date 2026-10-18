@@ -34,7 +34,7 @@ builder.Services.AddHttpClient("qc", client =>
 {
     var baseUrl = builder.Configuration["QcApi:BaseUrl"] ?? "http://127.0.0.1:8000";
     client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromMinutes(10);
+    client.Timeout = TimeSpan.FromMinutes(30);
 });
 var app = builder.Build();
 

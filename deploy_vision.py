@@ -56,12 +56,13 @@ COCO_TO_BDD100K = {
 
 
 # 2. Khởi tạo Class giữ Bộ đôi Model SOTA trên Modal Cloud: YOLO26 + DINOv3 (BBox) và YOLO26-Seg + SAM 2.1 (Segment)
-@app.cls(cpu=4.0, scaledown_window=180, timeout=600)
+@app.cls(cpu=8.0, scaledown_window=300, timeout=600, max_containers=10)
 class VisionEngine:
     @modal.enter()
     def load_models(self):
         import torch
         from ultralytics import YOLO, RTDETR
+        torch.set_num_threads(8)
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         for w in ["yolo26x.pt", "yolo11x.pt"]:
             try:
@@ -115,8 +116,8 @@ class VisionEngine:
         img_w, img_h = img.size
 
         with torch.inference_mode():
-            # A1. Chạy YOLO26x (YOLO Flagship) ở độ phân giải 1280
-            yolo_res = self.yolo(img, conf=threshold, imgsz=1280, verbose=False)
+            # A1. Chạy YOLO26x (YOLO Flagship) ở độ phân giải 640 tối ưu tốc độ
+            yolo_res = self.yolo(img, conf=threshold, imgsz=640, verbose=False)
             boxes = []
             classes = []
             labels = []
@@ -149,9 +150,9 @@ class VisionEngine:
                         "model": "YOLO26"
                     })
 
-            # A2. Chạy DINOv3 (RT-DETR Transformer Detector SOTA) ở độ phân giải 1280
+            # A2. Chạy DINOv3 (RT-DETR Transformer Detector SOTA) ở độ phân giải 640
             try:
-                dino_res = self.dino(img, conf=threshold, imgsz=1280, verbose=False)
+                dino_res = self.dino(img, conf=threshold, imgsz=640, verbose=False)
                 if dino_res and len(dino_res) > 0 and dino_res[0].boxes is not None:
                     for box in dino_res[0].boxes:
                         xyxy = [float(c) for c in box.xyxy[0].tolist()]
@@ -180,7 +181,7 @@ class VisionEngine:
                 # B1. YOLO26-Seg Instance Segmentation
                 try:
                     self.load_yolo_seg()
-                    yseg_res = self.yolo_seg(img, conf=threshold, imgsz=1280, verbose=False)
+                    yseg_res = self.yolo_seg(img, conf=threshold, imgsz=640, verbose=False)
                     if yseg_res and len(yseg_res) > 0 and yseg_res[0].masks is not None and yseg_res[0].boxes is not None:
                         for idx, box in enumerate(yseg_res[0].boxes):
                             cls_id = int(box.cls[0].item())
@@ -207,7 +208,7 @@ class VisionEngine:
                 if boxes:
                     try:
                         self.load_sam()
-                        sam_res = self.sam(img, bboxes=boxes, verbose=False)
+                        sam_res = self.sam(img, bboxes=boxes[:10], verbose=False)
                         if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
                             for idx, seg in enumerate(sam_res[0].masks.xy):
                                 if len(seg) >= 3:
