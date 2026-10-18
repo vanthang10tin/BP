@@ -4,8 +4,10 @@
 
 ```mermaid
 flowchart LR
-  Browser -->|same-origin HTTP| FastAPI
-  FastAPI --> StaticUI[frontend/ HTML CSS JS]
+  Browser -->|same-origin HTTP| Blazor[Blazor Web App]
+  Browser -->|same-origin HTTP| StaticUI[Static UI fallback]
+  Blazor -->|REST / JSON| FastAPI
+  StaticUI -->|REST / JSON| FastAPI
   FastAPI --> LegacyQC[POST /api/qc/check · BDDQualityChecker]
   FastAPI --> WorkspaceQC[POST /api/qc/run · BBox / segmentation pipeline]
   FastAPI --> Parser[Flexible dataset parser]
@@ -15,6 +17,43 @@ flowchart LR
   FastAPI --> SQLite[Local .qc-data workspace store]
   FastAPI -. configured local use .-> CVAT[CVAT REST API]
 ```
+
+Blazor là giao diện chính trong các script chạy đầy đủ và trên Render. FastAPI cũng có thể phục vụ giao diện tĩnh thay thế; cả hai gọi API cùng origin. `POST /api/qc/check` là luồng kiểm tra dataset trực tiếp/legacy, còn `POST /api/qc/run` là luồng workspace cho BBox và semantic segmentation.
+
+## Luồng review workspace
+
+```mermaid
+sequenceDiagram
+  actor Reviewer
+  participant UI as Blazor hoặc Static UI
+  participant API as FastAPI
+  participant Store as Workspace store
+  participant QC as QC pipeline
+  participant Provider as Model provider tùy chọn
+  participant External as Gemini/CVAT tùy chọn
+
+  Reviewer->>UI: Chọn workspace, dữ liệu/ảnh và profile
+  UI->>API: Tạo/đọc workspace, POST /api/qc/run
+  API->>Store: Đọc workspace/profile nếu có workspace_id
+  API->>QC: Chuẩn hóa dữ liệu và chạy rule checks
+  opt Có provider/model và ảnh
+    QC->>Provider: Yêu cầu inference
+    Provider-->>QC: Predictions hoặc trạng thái không khả dụng
+  end
+  opt Người dùng bật Gemini
+    UI->>API: Gửi yêu cầu kiểm tra frame
+    API->>External: Gửi ảnh đã chọn và ngữ cảnh
+    External-->>API: Đề xuất candidate
+  end
+  QC-->>API: Findings/candidates và metrics run
+  API-->>UI: Kết quả để reviewer xác nhận
+  opt Người dùng chủ động đồng bộ CVAT
+    UI->>API: Push issue đã được reviewer xác nhận
+    API->>External: CVAT REST API
+  end
+```
+
+Đường dữ liệu theo phiên bản/deployment có thể khác nhau: ảnh và nhãn có thể nằm trong request hoặc workspace cục bộ. Không coi dữ liệu demo/runtime là dữ liệu bền vững trên Render Free. Gemini và CVAT là ranh giới truyền dữ liệu ra ngoài; không gửi dữ liệu nhạy cảm lên deployment công khai.
 
 ## Chạy và deploy
 
@@ -34,6 +73,13 @@ flowchart LR
 - `frontend/BlazorApp/`: giao diện chính trên local và Render; `frontend/`: giao diện tĩnh thay thế.
 - `demo_data/`: sample fixtures; không được tự xem là gold set độc lập.
 - `.qc-data/`: dữ liệu runtime cục bộ. Render Free không lưu bền vững nội dung tại đây.
+
+## Ranh giới tin cậy và lưu trữ
+
+- Browser giao tiếp với backend qua HTTP(S); hiện ứng dụng không có đăng nhập/phân quyền người dùng. Không mở endpoint này công khai để xử lý dữ liệu nhạy cảm.
+- Quy tắc cục bộ có thể chạy không cần gửi ảnh ra ngoài. Gọi Gemini là opt-in và gửi ảnh/ngữ cảnh của frame được chọn tới Google; CVAT chỉ được gọi khi cấu hình và thao tác tương ứng.
+- Workspace/configuration được quản lý bởi backend và workspace store trong `.qc-data/`. Không xem filesystem của container Render Free là nơi lưu trữ lâu dài.
+- Kết quả model/rule là candidate hỗ trợ review. Việc Auto-Heal, export và push CVAT là thao tác riêng; reviewer phải xác nhận trước khi phát hành thay đổi bên ngoài.
 
 ## Ý nghĩa số liệu
 

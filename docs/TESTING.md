@@ -16,6 +16,34 @@ dotnet build frontend/BlazorApp/BlazorApp.csproj
 
 `TMP`/`TEMP` trỏ vào workspace để các test tạo file tạm trong vùng ghi được trên một số môi trường Windows bị sandbox hóa. Python dependencies cho service nằm trong `requirements.txt`; pytest chỉ nằm trong `requirements-dev.txt`.
 
+## Chiến lược và phạm vi kiểm thử
+
+Kiểm thử hiện chia theo các lớp sau; pass ở lớp này không tự chứng minh chất lượng mô hình hay tính đúng của dữ liệu nhãn:
+
+| Lớp | Phạm vi | Bằng chứng/điểm vào |
+|---|---|---|
+| Unit/logic | Rule engine, chuẩn hóa, parser, guideline, arbitration và integrity của finding | `backend/test_qc_system.py`; các module test `backend/test_*.py` |
+| API/regression | Upload, cấu hình môi trường, workspace/QC, public-demo guard, export/CVAT và lỗi provider | `python -m pytest backend -q`; một số test tùy dependency có thể skip |
+| UI/backend contract | Kiểu JSON, hình học, IDs, giới hạn upload và phục hồi lỗi phía Blazor | `dotnet run --project tests/BlazorRegression -c Release` |
+| Build | Biên dịch Blazor và kiểm tra cú pháp Python | `dotnet build frontend/BlazorApp/BlazorApp.csproj`; `python -m compileall -q backend` |
+| Smoke/integration ngoài | Endpoint triển khai, CVAT live, Gemini, model weights và persistence của host | Chạy riêng trên môi trường tương ứng; kết quả cũ/đầu ra giả không thay cho xác nhận trên deployment hiện hành |
+
+Các test model có thể cần cờ `QC_RUN_MODEL_TESTS=1`, weights hoặc package bổ sung; ghi rõ test nào bị skip và lý do. Test dùng mock/fixture xác nhận contract và nhánh xử lý, không đo accuracy.
+
+## Ma trận kiểm thử theo chức năng
+
+| Chức năng/rủi ro | Kiểm tra cần có | Trạng thái bằng chứng |
+|---|---|---|
+| Nạp định dạng và giới hạn upload | JSON/XML/TXT/CSV/ZIP hợp lệ; đầu vào lỗi; kích thước quá giới hạn | Có unit/API regression; xem kết quả pytest gần nhất bên dưới |
+| QC BBox và segmentation | Chuẩn hóa tọa độ, geometry, mask metrics, thiếu model/provider | Có regression và test tổng hợp; kết quả metrics tổng hợp không phải benchmark |
+| Review/candidate và guideline | Arbitration, provenance, reviewer decisions, guideline honesty | Có các test integrity/guideline; vẫn cần reviewer đánh giá thực tế |
+| Auto-Heal và export | Dữ liệu/trạng thái trả về, CSV encoding/metadata, Markdown draft | API có triển khai; xác nhận đúng theo lần chạy/test được ghi, chưa thay thế nghiệm thu output bằng người dùng |
+| CVAT | Cấu hình, frame mapping, push/pull và xử lý lỗi | Unit/regression hiện có; CVAT live trên test job chưa xác minh |
+| Deploy/public demo | Guard cấu hình credential, health, UI/API và persistence | Có regression; Render live và deploy mới chưa xác minh |
+| Model inference | Provider/weights thật, lỗi inference, metrics trên gold set | Chủ yếu là mock hoặc tùy chọn; chưa có independent adjudicated gold set |
+
+**Tiêu chí phát hành:** các test bắt buộc trong pipeline phải pass; test bị skip được ghi lý do; kiểm tra smoke trên đúng image/deployment sau mỗi lần deploy; CVAT phải dùng test job trước production. Không tuyên bố precision/recall, tốc độ review hoặc benchmark chất lượng nếu chưa có protocol và gold set độc lập.
+
 ## Kiểm tra hai luồng deploy — 2026-10-18
 
 - `python -m pytest backend -q`: **97 passed, 3 skipped**, 5 subtests passed, 1 cảnh báo Starlette/httpx; chạy ngoài sandbox vì TestClient và file `.env` tạm bị giới hạn trong sandbox. Ba test bị skip là tích hợp model local tùy chọn.
