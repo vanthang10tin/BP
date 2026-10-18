@@ -41,6 +41,7 @@ COPY --from=blazor-build /app/blazor ./blazor/
 ENV PORT=5000
 ENV QC_PUBLIC_DEMO=true
 ENV QcApi__BaseUrl=http://127.0.0.1:8000
+ENV QC_MODAL_API_URL=https://vanthang10tin--vision-pipeline-api-fastapi-app.modal.run
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV PYTHONUNBUFFERED=1
 

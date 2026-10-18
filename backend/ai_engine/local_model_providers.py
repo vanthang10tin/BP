@@ -36,8 +36,14 @@ class ProviderError(RuntimeError):
     pass
 
 
+DEFAULT_MODAL_URL = "https://vanthang10tin--vision-pipeline-api-fastapi-app.modal.run"
+
+
 def _modal_base_url() -> str:
-    value = os.environ.get("QC_MODAL_API_URL", "").strip().rstrip("/")
+    raw = os.environ.get("QC_MODAL_API_URL", "").strip()
+    if raw.lower() in {"disabled", "false", "none", "off"}:
+        return ""
+    value = raw.rstrip("/") if raw else DEFAULT_MODAL_URL
     if value:
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -102,14 +108,17 @@ def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
             return result
         try:
             req = urllib.request.Request(f"{modal_url}/status", headers={"User-Agent": "QC-Studio"})
-            with urllib.request.urlopen(req, timeout=min(timeout, 5)) as res:
+            with urllib.request.urlopen(req, timeout=min(timeout, 12)) as res:
                 info = json.loads(res.read().decode())
             if not isinstance(info, dict) or info.get("status") not in {"online", "ok"}:
                 raise ProviderError("Unexpected Modal status response")
             if capability not in info.get("capabilities", ["bbox", "segmentation", "sam2"]):
                 raise ProviderError(f"Modal does not advertise {capability}")
-            result.update(available=True, name=f"Modal Cloud ({info.get('model', capability)})",
-                          device=info.get("device", "unknown"),
+            display_name = info.get("model") or f"Modal Cloud ({capability})"
+            if not display_name.startswith("Modal"):
+                display_name = f"Modal Cloud ({display_name})"
+            result.update(available=True, name=display_name,
+                          device=info.get("device", "cuda:0" if info.get("gpu") else "cpu"),
                           type="mask" if capability in {"segmentation", "sam2"} else "bbox",
                           label_count=info.get("label_count", 80),
                           supported_classes=list(set(COCO_TO_BDD100K.values())), thresholds={}, error=None)

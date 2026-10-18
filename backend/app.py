@@ -43,7 +43,7 @@ from coordinate_utils import (
     to_xyxy, coco_to_xyxy, yolo_to_xyxy, voc_to_xyxy,
     bdd_to_xyxy, xyxy_to_bdd, xyxy_to_gemini, xyxy_to_yolo, xyxy_to_coco
 )
-from ai_engine.local_model_providers import available_providers, ProviderError
+from ai_engine.local_model_providers import available_providers, ProviderError, _modal_base_url
 from qc_pipeline import run_bbox_pipeline, run_segmentation_pipeline
 from gemini_provider import configured as gemini_configured, inspect_frame as gemini_inspect_frame, model_name as gemini_model_name
 from workspace_store import (create_workspace, get_workspace, list_workspaces, update_profile,
@@ -286,7 +286,7 @@ try:
             "service": "local-dataset-qc-api",
             # A liveness check must not import/load large model checkpoints.
             # Provider availability is reported by /api/models on demand.
-            "models_mode": "remote" if os.environ.get("QC_MODAL_API_URL", "").strip() else "local",
+            "models_mode": "remote" if _modal_base_url() else "local",
             "public_demo": public_demo_enabled(),
             "capabilities": ["rule-based-geometry", "local-bbox-inference", "local-semantic-mask-comparison", "workspace-guideline-versioning", "cvat-issues"]
         }

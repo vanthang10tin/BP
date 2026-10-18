@@ -17,5 +17,5 @@ services:
       - key: CVAT_ACCESS_TOKEN
         sync: false
       - key: QC_MODAL_API_URL
-        sync: false
+        value: "https://vanthang10tin--vision-pipeline-api-fastapi-app.modal.run"
 

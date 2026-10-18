@@ -199,7 +199,7 @@
                                     <button class="layer-btn human @(ShowHumanBoxes ? "active" : "")" @onclick="() => ShowHumanBoxes = !ShowHumanBoxes" title="Ẩn/Hiện nhãn người đánh (Màu xanh)">
                                         <span class="dot-human"></span> Nhãn người (@HumanBoxCount)
                                     </button>
-                                    <button class="layer-btn model @(ShowModelBoxes ? "active" : "")" @onclick="() => ShowModelBoxes = !ShowModelBoxes" title="Ẩn/Hiện AI Model YOLO26x (Màu tím)">
+                                    <button class="layer-btn model @(ShowModelBoxes ? "active" : "")" @onclick="() => ShowModelBoxes = !ShowModelBoxes" title="Ẩn/Hiện AI Model (Màu tím)">
                                         <span class="dot-model"></span> Model AI (@ModelBoxCount)
                                     </button>
                                     <button class="layer-btn issues @(ShowIssueBoxes ? "active" : "")" @onclick="() => ShowIssueBoxes = !ShowIssueBoxes" title="Ẩn/hiện các candidate QC/model cần người review; đây không phải lỗi đã được xác nhận.">
@@ -332,7 +332,7 @@
                                                             {
                                                                 <foreignObject x="@predBox.Value.X" y="@predBox.Value.Y" width="190" height="22">
                                                                     <div class="@(isAccepted ? "label-text" : "model-label")">
-                                                                        @(isAccepted ? "✓ accepted · " : "YOLO26x · ")@GetString(item, "category", "object")
+                                                                        @(isAccepted ? "✓ accepted · " : $"{GetString(item, "model", "Model AI")} · ")@GetString(item, "category", "object")
                                                                     </div>
                                                                 </foreignObject>
                                                             }
@@ -372,7 +372,7 @@
 
                             <div class="legend">
                                 <span><i class="dot-human"></i> Nhãn người đánh (Màu xanh)</span>
-                                <span><i class="dot-model"></i> YOLO26x đề xuất (Màu tím)</span>
+                                <span><i class="dot-model"></i> Model AI đề xuất (Màu tím)</span>
                                 <span><i class="dot-issue"></i> Lỗi QC (Viền đỏ nét đứt)</span>
                                 <span class="image-hint">@GetString(SelectedFrame ?? default, "frame_name", "")</span>
                             </div>
@@ -394,7 +394,7 @@
                                 <div class="no-issues">
                                     <i class="bi bi-check2-circle"></i>
                                     <b>Không phát hiện lỗi trên frame này</b>
-                                    <small>YOLO26x và rule engine không ghi nhận sai lệch vượt ngưỡng.</small>
+                                    <small>Model AI và rule engine không ghi nhận sai lệch vượt ngưỡng.</small>
                                 </div>
                             }
                             else
@@ -429,7 +429,14 @@
                                                 <span>@GetString(issue, "guideline_rule", "Review against team guideline")</span>
                                             </div>
                                             <div class="issue-footer">
-                                                <span><i class="bi bi-cpu"></i> @GetString(issue, "model_name", "YOLO26x")</span>
+                                                @if (!string.IsNullOrWhiteSpace(GetString(issue, "model_name", "")))
+                                                {
+                                                    <span><i class="bi bi-cpu"></i> @GetString(issue, "model_name", "")</span>
+                                                }
+                                                else
+                                                {
+                                                    <span><i class="bi bi-shield-check"></i> @GetString(issue, "qa_layer", "Tầng 1 (Luật)")</span>
+                                                }
                                                 <button class="text-button" @onclick="() => CopyIssue(issue)" @onclick:stopPropagation="true">Copy note</button>
                                             </div>
 
@@ -1152,11 +1159,20 @@
             IssueDecisions.Clear(); SelectedFrameName = GetString(Frames[0], "frame_name", ""); SelectedFrame = Frames[0]; Step = 1; ApiOnline = true; ShowModelMask = false;
             var models = GetArray(ResultRoot, "models");
             var skipped = GetArray(ResultRoot, "model_skips").Count;
-            StatusMessage = UseGemini
-                ? $"Đã chạy QC local + Gemini {GeminiModel}: {GetInt(ResultRoot, "model_issues", 0)} candidate issues tổng cộng. Gemini đã kiểm tra {GetInt(GetObject(ResultRoot, "gemini"), "frames_checked", 0)} frame; mọi đề xuất cần người xác nhận. Ảnh và guideline đã được gửi tới Google."
-                : Mode == "segmentation"
-                ? $"Đã chạy local segmentation: {models.Count} model, {GetInt(ResultRoot, "model_issues", 0)} candidate issue. Macro IoU chỉ là so sánh run này, chưa phải benchmark."
-                : $"Đã chạy QC + local detector: {models.Count} model, {GetInt(ResultRoot, "model_issues", 0)} candidate issue; {skipped} frame chưa có ảnh/model result. Candidate cần người xác nhận.";
+            var modelIssues = GetInt(ResultRoot, "model_issues", 0);
+            if (models.Count == 0 && skipped > 0)
+            {
+                StatusMessage = $"Đã chạy QC Tầng 1 (Luật). Lưu ý: Chưa kết nối Model AI ({skipped} frame bỏ qua AI do model offline hoặc chưa cấu hình).";
+            }
+            else
+            {
+                var modelNames = string.Join(", ", models.Select(m => GetString(m, "name", "AI")));
+                StatusMessage = UseGemini
+                    ? $"Đã chạy QC + Gemini {GeminiModel}: {modelIssues} candidate issues tổng cộng. Mọi đề xuất cần người xác nhận."
+                    : Mode == "segmentation"
+                    ? $"Đã chạy Segmentation AI ({modelNames}): {modelIssues} candidate issues."
+                    : $"Đã chạy QC + Model AI ({modelNames}): {modelIssues} candidate issues; {skipped} frame chưa có ảnh/model result. Candidate cần người xác nhận.";
+            }
         }
         catch (Exception ex) { StatusMessage = $"Phân tích thất bại: {ex.Message}"; HasError = true; }
         finally { IsBusy = false; }
