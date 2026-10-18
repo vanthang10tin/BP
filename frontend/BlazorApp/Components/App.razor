@@ -84,7 +84,7 @@
                 }
             },
             spotlightCanvasBox: function (x, y, w, h) {
-                const wrapper = document.querySelector('.image-wrapper') || document.querySelector('.canvas-viewport');
+                const wrapper = document.querySelector('.canvas-stage-wrapper') || document.querySelector('.image-wrapper') || document.querySelector('.canvas-viewport') || document.querySelector('.canvas-stage');
                 if (wrapper) {
                     const svg = wrapper.querySelector('svg.annotation-overlay');
                     if (svg && svg.viewBox && svg.viewBox.baseVal) {

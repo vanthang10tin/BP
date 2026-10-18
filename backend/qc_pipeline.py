@@ -221,8 +221,8 @@ def _base_bbox_frames(frames: list[dict[str, Any]], profile: dict[str, Any], gui
 def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any], guideline_manager: Any,
                       threshold: float = 0.35, match_iou: float = 0.5) -> dict[str, Any]:
     def arbitrate(*args, **kwargs):
-        if profile.get("use_gemini") is not True:
-            return _unresolved_dispute("Gemini chưa được bật cho lần chạy này.")
+        if profile.get("use_gemini") is False or not gemini_configured():
+            return _unresolved_dispute("Gemini chưa được kích hoạt hoặc chưa cấu hình API key.")
         return arbitrate_dispute(*args, **kwargs)
 
     profile = {"annotation_format": "bdd100k", "dataset": "bdd100k", **profile}
@@ -341,6 +341,8 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
 
         findings = []
 
+        gemini_confirmed_boxes = []
+
         if has_dual:
             # -------------------------------------------------------------
             # Cơ chế hội đồng YOLO26 + D-FINE, có Gemini làm trọng tài VLM.
@@ -371,7 +373,7 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                 if y_is_correct and y_match_idx >= 0:
                     unmatched_yolo.remove(y_match_idx)
 
-                # 2. Evaluate the second detector (RT-DETR).
+                # 2. Evaluate the second detector (D-FINE / RT-DETR).
                 d_matches = [(compute_iou(tuple(obj["box"]), tuple(dino_boxes[j]["box"])), j)
                              for j in unmatched_dino if dino_boxes[j]["category"] == gt_cat]
                 d_best_match_iou, d_match_idx = max(d_matches, default=(0.0, -1))
@@ -441,6 +443,16 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                             "suggested_box": obj["box"], "review_status": "pending", "auto_healable": False,
                             "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")("class", conf_cls) if guideline_manager else ""
                         })
+                        gemini_confirmed_boxes.append({
+                            "id": f"SYS_GEMINI_GT_{obj['id']}",
+                            "category": conf_cls,
+                            "model_label": conf_cls,
+                            "box": obj["box"],
+                            "confidence": float(verdict.get("confidence") or 0.85),
+                            "model": "Trọng tài Gemini",
+                            "model_role": "arbitrated",
+                            "type": "rectangle"
+                        })
 
             # Kiểm tra vật thể bỏ sót:
             matched_pairs = set()
@@ -492,6 +504,41 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                         "review_status": "pending", "auto_healable": False,
                         "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")("class", c_cls) if guideline_manager else ""
                     })
+                    gemini_confirmed_boxes.append({
+                        "id": f"SYS_GEMINI_{s_idx}",
+                        "category": c_cls,
+                        "model_label": cand.get("model_label", c_cls),
+                        "box": cand["box"],
+                        "confidence": float(arb.get("confidence") or cand.get("confidence") or 0.85),
+                        "model": "Trọng tài Gemini",
+                        "model_role": "arbitrated",
+                        "type": "rectangle"
+                    })
+
+            # Tạo tập box thống nhất duy nhất đại diện cho model hệ thống (Consensus)
+            # Không hiển thị raw boxes trùng lặp của cả 2 model
+            consensus_boxes = []
+            used_dino_c = set()
+            for yi, yb in enumerate(yolo_boxes):
+                d_matches = [(compute_iou(tuple(yb["box"]), tuple(dino_boxes[di]["box"])), di)
+                             for di in range(len(dino_boxes))
+                             if di not in used_dino_c and dino_boxes[di]["category"] == yb["category"]]
+                best_iou, best_di = max(d_matches, default=(0.0, -1))
+                if best_iou >= 0.35 and best_di >= 0:
+                    used_dino_c.add(best_di)
+                    db = dino_boxes[best_di]
+                    consensus_boxes.append({
+                        "id": f"SYS_CONSENSUS_{len(consensus_boxes)}",
+                        "category": yb["category"],
+                        "model_label": yb.get("model_label", yb["category"]),
+                        "box": db["box"],
+                        "confidence": round(max(yb.get("confidence", 0), db.get("confidence", 0)), 3),
+                        "model": "Hội đồng AI (YOLO26x + D-FINE-X)",
+                        "model_role": "consensus",
+                        "type": "rectangle"
+                    })
+
+            unified_system_predictions = consensus_boxes + gemini_confirmed_boxes
 
         else:
             # A single detector cannot establish two-model consensus.
@@ -505,11 +552,13 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                 if any(compute_iou(tuple(pred["box"]), tuple(obj["box"])) >= match_iou for obj in gt_objects):
                     continue
                 findings.append(_unresolved_finding(name, f"MODEL_{index}", pred["category"], pred["box"], unresolved))
+            unified_system_predictions = model_boxes
 
-        result["model_predictions"] = model_boxes
+        result["model_predictions"] = unified_system_predictions
+        result["raw_model_boxes"] = model_boxes
         result["errors"].extend(findings)
-        result["model_coverage"] = {"classes_in_project": class_names, "classes_predicted": sorted({p["category"] for p in model_boxes}),
-                                    "annotated_objects": len(gt_objects), "predictions": len(model_boxes), "match_iou": match_iou}
+        result["model_coverage"] = {"classes_in_project": class_names, "classes_predicted": sorted({p["category"] for p in unified_system_predictions}),
+                                    "annotated_objects": len(gt_objects), "predictions": len(unified_system_predictions), "match_iou": match_iou}
         _rank(result)
         return p_meta, None, len(findings)
 
@@ -581,8 +630,8 @@ def _decode_mask_item(item: dict[str, Any], width: int, height: int):
 def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, str], masks: dict[str, str], profile: dict[str, Any],
                               guideline_manager: Any, threshold: float = 0.35, review_iou_threshold: float = 0.5) -> dict[str, Any]:
     def arbitrate(*args, **kwargs):
-        if profile.get("use_gemini") is not True:
-            return _unresolved_dispute("Gemini chưa được bật cho lần chạy này.")
+        if profile.get("use_gemini") is False or not gemini_configured():
+            return _unresolved_dispute("Gemini chưa được kích hoạt hoặc chưa cấu hình API key.")
         return arbitrate_dispute(*args, **kwargs)
 
     import numpy as np

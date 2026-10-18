@@ -122,3 +122,62 @@ def test_consensus_requires_same_class(first, second, expected_calls):
     else:
         assert len(issues) == 1
         assert issues[0]["error_type"] == "MODEL_CLASS_DISAGREEMENT"
+
+
+def test_model_predictions_contain_single_unified_consensus_box():
+    import io
+    from PIL import Image
+    import qc_pipeline as qp
+    image = io.BytesIO()
+    Image.new("RGB", (100, 100)).save(image, format="PNG")
+    labels = [{"id": "1", "category": "car", "box2d": dict(x1=10, y1=10, x2=50, y2=50)}]
+    frames = [{"name": "a.png", "labels": labels}]
+    base = [{"frame_name": "a.png", "frame_index": 0, "labels": labels, "errors": []}]
+    # Both YOLO26x and D-FINE-X detect the exact same car
+    predictions = [
+        dict(type="rectangle", label="car", points=[10, 10, 50, 50], confidence=.92, model="YOLO26x", model_role="detector_a"),
+        dict(type="rectangle", label="car", points=[10.5, 9.8, 50.2, 50.1], confidence=.95, model="D-FINE-X", model_role="detector_b"),
+    ]
+    with patch.object(qp, "_base_bbox_frames", return_value=base), \
+         patch.object(qp, "_image_bytes", return_value=image.getvalue()), \
+         patch.object(qp, "infer_bbox", return_value=(predictions, {"name": "fixture", "model_runs": [
+             {"role": "detector_a", "status": "success"}, {"role": "detector_b", "status": "success"}]})), \
+         patch.object(gp, "align_taxonomy_with_gemini", return_value={}):
+        result = qp.run_bbox_pipeline(frames, {}, {"classes": ["car"]}, None)
+
+    frame_res = result["sorted_frames"][0]
+    # Raw boxes still preserve both model detections for logging/audit
+    assert len(frame_res["raw_model_boxes"]) == 2
+    # System predictions displayed to user (purple layer) MUST contain ONLY 1 unified box
+    assert len(frame_res["model_predictions"]) == 1
+    consensus_pred = frame_res["model_predictions"][0]
+    assert consensus_pred["category"] == "car"
+    assert "Hội đồng" in consensus_pred["model"]
+
+
+def test_auto_gemini_arbitration_when_configured():
+    import io
+    from PIL import Image
+    import qc_pipeline as qp
+    image = io.BytesIO()
+    Image.new("RGB", (100, 100)).save(image, format="PNG")
+    labels = [{"id": "1", "category": "car", "box2d": dict(x1=10, y1=10, x2=50, y2=50)}]
+    frames = [{"name": "a.png", "labels": labels}]
+    base = [{"frame_name": "a.png", "frame_index": 0, "labels": labels, "errors": []}]
+    # YOLO says car, D-FINE says truck -> conflict!
+    predictions = [
+        dict(type="rectangle", label="car", points=[10, 10, 50, 50], confidence=.90, model="YOLO26x", model_role="detector_a"),
+        dict(type="rectangle", label="truck", points=[10, 10, 50, 50], confidence=.88, model="D-FINE-X", model_role="detector_b"),
+    ]
+    with patch.object(qp, "_base_bbox_frames", return_value=base), \
+         patch.object(qp, "_image_bytes", return_value=image.getvalue()), \
+         patch.object(qp, "infer_bbox", return_value=(predictions, {"name": "fixture", "model_runs": [
+             {"role": "detector_a", "status": "success"}, {"role": "detector_b", "status": "success"}]})), \
+         patch.object(gp, "align_taxonomy_with_gemini", return_value={}), \
+         patch.object(qp, "gemini_configured", return_value=True), \
+         patch.object(qp, "arbitrate_dispute", return_value=gp._unresolved_dispute("arbitrated")) as arb:
+        # profile does NOT have use_gemini: True explicitly passed
+        result = qp.run_bbox_pipeline(frames, {}, {"classes": ["car", "truck"]}, None)
+    # Gemini MUST be called automatically!
+    assert arb.call_count == 1
+

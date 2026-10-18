@@ -384,18 +384,21 @@ try:
         guideline_text, guideline_version = None, None
         if workspace:
             active = workspace.get("active_guideline")
-            if active:
+            if active and active.get("text"):
                 guideline_text, guideline_version = active["text"], active["version"]
-                profile["guideline_status"] = active["status"]
+                profile["guideline_status"] = "user_guideline" if active.get("status") not in {"system_default", None} else "system_default"
             else:
                 profile["guideline_status"] = "system_default"
         elif payload.get("guideline"):
             guideline_text = str(payload["guideline"])
-            profile["guideline_status"] = "request_draft"
+            profile["guideline_status"] = "user_guideline"
         else:
             profile["guideline_status"] = "system_default"
         guideline_manager = GuidelineManager(guideline_text)
-        profile["use_gemini"] = payload.get("use_gemini") is True
+        if "use_gemini" in payload:
+            profile["use_gemini"] = bool(payload["use_gemini"]) and gemini_configured()
+        else:
+            profile["use_gemini"] = gemini_configured()
         images, masks = payload.get("images", {}), payload.get("masks", {})
         try:
             if task == "bbox":
@@ -591,8 +594,8 @@ try:
         if not guideline_text:
             guideline_text = global_guideline_manager.get_guideline_text()
         dataset_classes = payload.get("dataset_classes", [])
-        from gemini_provider import align_taxonomy_with_gemini
-        alignment = await run_in_threadpool(align_taxonomy_with_gemini, guideline_text, dataset_classes)
+        from gemini_provider import align_taxonomy_with_gemini, ALL_KNOWN_MODEL_DETECTION_CLASSES
+        alignment = await run_in_threadpool(align_taxonomy_with_gemini, guideline_text, dataset_classes, ALL_KNOWN_MODEL_DETECTION_CLASSES)
         return {
             "status": "success",
             "alignment": alignment
