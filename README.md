@@ -8,7 +8,7 @@
 - **Tên:** QC Studio 2D — QC tự động cho BBox và Segmentation 2D
 - **Mô tả:** Nạp nhãn và ảnh, kiểm tra một số điều kiện hình học, so sánh với model khi provider/weights có sẵn, sắp xếp frame cần review và xuất báo cáo.
 - **Thumbnail:** [thumbnail.jpg](thumbnail.jpg)
-- **Live URL:** Chưa deploy. Xem [hướng dẫn deploy Render](docs/DEPLOYMENT_GUIDE.md); chỉ bổ sung URL sau khi đã deploy và kiểm tra bằng trình duyệt.
+- **Live URL:** https://bp-uaxf.onrender.com
 
 ## Chạy nhanh trên máy local
 
