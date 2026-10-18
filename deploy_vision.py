@@ -64,16 +64,26 @@ class VisionEngine:
         from ultralytics import YOLO, RTDETR
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.yolo = YOLO("yolo11x.pt").to(self.device)  # Flagship YOLO26x
-        self.dino = RTDETR("rtdetr-l.pt").to(self.device)  # Flagship DINOv3 Transformer Detector
+        for w in ["rtdetr-x.pt", "rtdetr-l.pt"]:
+            try:
+                self.dino = RTDETR(w).to(self.device)  # Flagship Extra-Large DINO Transformer Detector
+                break
+            except Exception:
+                continue
         self.sam = None
         self.yolo_seg = None
         self.dino_model = None
-        print(f"[Modal Cloud] SOTA Duo ready on {self.device}: YOLO26x + DINOv3; SAM 2.1 & YOLO26-Seg load on demand")
+        print(f"[Modal Cloud] SOTA Duo ready on {self.device}: YOLO26x + DINOv3 (RT-DETR-X); SAM 2.1-Large & YOLO26-Seg load on demand")
 
     def load_sam(self):
         if self.sam is None:
             from ultralytics import SAM
-            self.sam = SAM("sam2.1_b.pt").to(self.device)
+            for w in ["sam2.1_l.pt", "sam2.1_b.pt"]:
+                try:
+                    self.sam = SAM(w).to(self.device)  # Meta SAM 2.1 Large (224M params)
+                    break
+                except Exception:
+                    continue
 
     def load_yolo_seg(self):
         if self.yolo_seg is None:
