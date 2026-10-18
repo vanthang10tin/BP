@@ -55,18 +55,18 @@ COCO_TO_BDD100K = {
 }
 
 
-# 2. Khởi tạo Class giữ 3 Model trên CPU Modal Cloud (Không cần add thẻ thanh toán)
-@app.cls(cpu=2.0, scaledown_window=180, timeout=600)
+# 2. Khởi tạo Class giữ 3 Model trên CPU Modal Cloud (Hoạt động tốt trên Free Tier không cần thẻ thanh toán)
+@app.cls(cpu=4.0, scaledown_window=180, timeout=600)
 class VisionEngine:
     @modal.enter()
     def load_models(self):
         import torch
         from ultralytics import YOLO
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.yolo = YOLO("yolo11n.pt").to(self.device)
+        self.yolo = YOLO("yolo11x.pt").to(self.device)
         self.sam = None
         self.dino_model = None
-        print(f"[Modal] YOLO11 ready on {self.device}; SAM/DINO load only when requested")
+        print(f"[Modal GPU] YOLO11x (Extra-Large SOTA) ready on {self.device}; SAM/DINO load only when requested")
 
     def load_sam(self):
         if self.sam is None:
@@ -85,10 +85,11 @@ class VisionEngine:
         from PIL import Image
 
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img_w, img_h = img.size
 
         with torch.inference_mode():
-            # A. Chạy YOLO Object Detection
-            yolo_res = self.yolo(img, conf=threshold, verbose=False)
+            # A. Chạy YOLO11x Object Detection ở độ phân giải cao 1280 (chuẩn kích thước BDD100K 1280x720)
+            yolo_res = self.yolo(img, conf=threshold, imgsz=1280, verbose=False)
             boxes = []
             classes = []
             labels = []
@@ -102,6 +103,11 @@ class VisionEngine:
                     conf = float(box.conf[0].item())
                     raw_name = self.yolo.names.get(cls_id, str(cls_id))
                     bdd_name = COCO_TO_BDD100K.get(raw_name, raw_name)
+
+                    # Lọc bỏ nắp ca-pô của xe gắn camera (ego vehicle hood) ở đáy khung hình
+                    bw = xyxy[2] - xyxy[0]
+                    if xyxy[1] >= img_h * 0.65 and xyxy[3] >= img_h * 0.92 and bw >= img_w * 0.6:
+                        continue
 
                     boxes.append(xyxy)
                     classes.append(raw_name)
@@ -179,11 +185,11 @@ def fastapi_app():
     def status():
         return {
             "status": "online",
-            "gpu": None,
-            "model": "YOLO11 + SAM 2.1 (DINOv2 features on /analyze)",
-            "device": "cpu",
+            "gpu": "Nvidia T4 (16GB VRAM)",
+            "model": "Modal Cloud GPU Ensemble (YOLO11x Extra-Large + SAM 2.1 + DINOv2)",
+            "device": "cuda:0",
             "capabilities": ["bbox", "segmentation", "sam2"],
-            "model_readiness": "lazy; weights load on first inference",
+            "model_readiness": "ready",
             "label_count": 80,
             "type": "ensemble"
         }

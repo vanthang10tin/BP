@@ -1013,7 +1013,12 @@ try:
             with urllib.request.urlopen(list_req, timeout=30) as response:
                 page = json.loads(response.read().decode("utf-8"))
             cvat_raw_issues = page.get("results", [])
-            existing = {(int(i.get("frame", -1)), str(i.get("message", ""))) for i in cvat_raw_issues}
+            existing = set()
+            for item in cvat_raw_issues:
+                f_idx = int(item.get("frame", -1))
+                comms = item.get("comments", [])
+                c_msg = str(comms[0].get("message", "")) if comms and isinstance(comms[0], dict) else str(item.get("message", ""))
+                existing.add((f_idx, c_msg))
             existing_by_frame = {}
             for item in cvat_raw_issues:
                 existing_by_frame.setdefault(int(item.get("frame", -1)), []).append(item)
@@ -1062,6 +1067,9 @@ try:
                     skipped_unreviewed += 1
                     continue
                 eligible_count += 1
+                error_type = str(issue.get("error_type", "QC issue"))
+                model_name = str(issue.get("model_name", ""))
+                message = f"[QC Studio][{issue.get('severity', 'REVIEW')}][{issue.get('issue_id', error_type)}] {frame_name}: {error_type}. {issue.get('explanation', '')} Model: {model_name or 'rule'}; guideline: {issue.get('guideline_rule', '')}"
                 # Nếu issue này vốn từ CVAT kéo về: không tạo mới, mà chỉ cập nhật trạng thái nếu đã resolve
                 cvat_orig_id = issue.get("cvat_issue_id")
                 if cvat_orig_id:
@@ -1140,6 +1148,9 @@ try:
                     created += 1
                     existing.add((frame_id, message))
                     existing_by_frame.setdefault(frame_id, []).append({"position": position, "comments": [{"message": message}]})
+                except urllib.error.HTTPError as exc:
+                    detail = exc.read().decode("utf-8", errors="replace")[:400]
+                    failures.append({"frame": frame_name, "error_type": error_type, "message": f"CVAT HTTP {exc.code}: {detail}"})
                 except Exception as exc:
                     failures.append({"frame": frame_name, "error_type": error_type, "message": str(exc)[:300]})
 

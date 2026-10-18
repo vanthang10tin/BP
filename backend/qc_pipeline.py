@@ -268,6 +268,9 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
             target_thresh = class_thresh_map.get(category, min_conf)
             if conf < target_thresh or bw < min_pixels or bh < min_pixels:
                 continue
+            # Bỏ qua nắp ca-pô xe camera (ego vehicle hood) ở đáy khung hình
+            if category in {"car", "truck", "bus"} and box[1] >= height * 0.65 and box[3] >= height * 0.92 and bw >= width * 0.6:
+                continue
             overlaps_gt = any(compute_iou(tuple(box), tuple(obj["box"])) >= 0.30 for obj in gt_objects)
             if category not in class_names and not overlaps_gt:
                 continue
