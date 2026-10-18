@@ -295,7 +295,7 @@ try:
     def get_models():
         providers = available_providers()
         return {"privacy": "Local inference is the default. Gemini is opt-in per run and sends selected images plus guideline to Google.", "providers": providers,
-                "gemini": {"configured": gemini_configured() and not public_demo_enabled(), "model": gemini_model_name(), "enabled": gemini_configured() and not public_demo_enabled()}}
+                "gemini": {"configured": gemini_configured(), "model": gemini_model_name(), "enabled": gemini_configured()}}
 
     @fastapi_app.post("/api/gemini/config")
     async def save_gemini_config(request: Request):
@@ -353,10 +353,8 @@ try:
 
     def run_workspace_qc_payload(payload: dict):
         if payload.get("use_gemini") is True:
-            if public_demo_enabled():
-                raise HTTPException(status_code=403, detail="Gemini is disabled on the public demo.")
             if not gemini_configured():
-                raise HTTPException(status_code=400, detail="Gemini API key is not configured.")
+                raise HTTPException(status_code=400, detail="Gemini API key is not configured. Add GEMINI_API_KEY to the backend .env file or environment variables.")
         workspace_id = payload.get("workspace_id")
         workspace = get_workspace(workspace_id) if workspace_id else None
         if workspace_id and workspace is None:
@@ -402,10 +400,8 @@ try:
         result["compiled_rules"] = guideline_manager.get_compiled_rules()
         # Cloud vision is strictly opt-in; the local pipeline runs first and remains the source of truth.
         if payload.get("use_gemini") is True:
-            if public_demo_enabled():
-                raise HTTPException(status_code=403, detail="Gemini is disabled on the public demo.")
             if not gemini_configured():
-                raise HTTPException(status_code=400, detail="Gemini API key is not configured. Add GEMINI_API_KEY to the backend .env file.")
+                raise HTTPException(status_code=400, detail="Gemini API key is not configured. Add GEMINI_API_KEY to the backend .env file or environment variables.")
             limit = max(1, min(50, int(payload.get("gemini_frame_limit", 10))))
             image_payloads = images if isinstance(images, dict) else {}
             source_records = payload.get("data")
@@ -700,8 +696,6 @@ try:
 
     @fastapi_app.post("/api/qc/gemini-inspect-frame")
     async def gemini_inspect_frame_endpoint(request: Request):
-        if public_demo_enabled():
-            raise HTTPException(status_code=403, detail="Gemini is disabled on the public demo.")
         """Đối soát chéo 3 bên (Model vs Nhãn Annotator vs Guideline) cho 1 frame bằng Gemini VLM."""
         if not gemini_configured():
             raise HTTPException(

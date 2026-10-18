@@ -55,7 +55,7 @@ def configured() -> bool:
 
 
 def model_name() -> str:
-    return os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+    return os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite").strip() or "gemini-3.1-flash-lite"
 
 
 def inspect_frame(
@@ -123,11 +123,11 @@ def inspect_frame(
         }
     }
     primary_model = model_name()
-    models_to_try = [primary_model]
-    if primary_model != "gemini-2.5-flash":
-        models_to_try.append("gemini-2.5-flash")
-    if "gemini-1.5-flash" not in models_to_try:
-        models_to_try.append("gemini-1.5-flash")
+    candidate_models = [primary_model, "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"]
+    models_to_try = []
+    for m in candidate_models:
+        if m and m not in models_to_try:
+            models_to_try.append(m)
 
     last_error = None
     output = None
@@ -145,8 +145,8 @@ def inspect_frame(
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:500]
             last_error = ValueError(f"Gemini API ({current_m}) returned HTTP {exc.code}: {detail}")
-            # If 404 model not found, try fallback
-            if exc.code == 404:
+            # If 404 (retired), 503 (overload), or 429 (rate limit), try next model
+            if exc.code in {404, 503, 429}:
                 continue
             raise last_error from exc
         except (urllib.error.URLError, TimeoutError) as exc:

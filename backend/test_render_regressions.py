@@ -98,9 +98,10 @@ def test_offline_modal_is_not_reported_available(monkeypatch):
     assert all(not item["available"] for item in result)
 
 
-def test_public_gemini_rejected_before_inference(monkeypatch):
-    monkeypatch.setenv("QC_PUBLIC_DEMO", "true")
+def test_unconfigured_gemini_rejected_before_inference(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(app, "gemini_configured", lambda: False)
     monkeypatch.setattr(app, "run_bbox_pipeline", lambda *a, **k: pytest.fail("should reject before model work"))
     with pytest.raises(app.HTTPException) as exc:
         app.run_workspace_qc_payload({"task_type": "bbox", "use_gemini": True})
-    assert exc.value.status_code == 403
+    assert exc.value.status_code == 400

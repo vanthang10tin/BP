@@ -151,7 +151,7 @@
                 @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="status-message @(HasError ? "error" : "")"><i class="bi @(HasError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @StatusMessage</div> }
                 <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "QC + Gemini review" : ModelsMode == "remote" ? "Modal Cloud review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : ModelsMode == "remote" ? "Ảnh được gửi tới Modal Cloud đã cấu hình; Gemini không được gọi." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.") Số lượng candidate có thể khác giữa máy do model/weights local khác nhau.</small></span></div><button class="primary-button" disabled="@IsBusy" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : ModelsMode == "remote" ? "Run QC + Modal" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
                 <div class="setup-card" style="margin-top:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
-                    <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@(IsBusy || !GeminiConfigured)" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">@(GeminiConfigured ? $"Chỉ gửi ảnh khi bạn bật tùy chọn này (Model: {GeminiModel})." : "Gemini chưa được cấu hình hoặc bị tắt trong chế độ public demo.") Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
+                    <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@(IsBusy || !GeminiConfigured)" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">@(GeminiConfigured ? $"Chỉ gửi ảnh khi bạn bật tùy chọn này (Model: {GeminiModel})." : "Gemini chưa được cấu hình. Thêm GEMINI_API_KEY vào biến môi trường.") Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
                     <label style="margin:0;max-width:180px">Số frame tối đa<input type="number" min="1" max="50" @bind="GeminiFrameLimit" disabled="@(!UseGemini || IsBusy)" /></label>
                 </div>
             }
@@ -677,7 +677,7 @@
     private List<JsonElement> ModelProviders = new();
     private bool UseGemini;
     private bool GeminiConfigured;
-    private string GeminiModel = "gemini-3.8-flash";
+    private string GeminiModel = "gemini-3.1-flash-lite";
     private int GeminiFrameLimit = 10;
     private string? CvatJobResultUrl;
     private string? CvatOperationMessage;
