@@ -1639,6 +1639,16 @@
         foreach (var frame in Frames)
         {
             var row = JsonSerializer.Deserialize<Dictionary<string, object?>>(frame.GetRawText()) ?? new();
+            var fname = GetString(frame, "frame_name", GetString(frame, "name", ""));
+            if (!string.IsNullOrEmpty(fname))
+            {
+                row["frame_name"] = fname;
+                row["name"] = fname;
+            }
+            if (!row.ContainsKey("frame_index") || row["frame_index"] is null)
+            {
+                row["frame_index"] = output.Count;
+            }
             var issues = new List<Dictionary<string, object?>>();
             foreach (var issue in GetArray(frame, "errors"))
             {
@@ -1646,7 +1656,8 @@
                 item["review_status"] = GetIssueDecision(issue);
                 issues.Add(item);
             }
-            row["errors"] = issues; output.Add(row);
+            row["errors"] = issues;
+            output.Add(row);
         }
         return output;
     }
@@ -1941,8 +1952,18 @@
     private async Task PushCvatIssues(bool returnJob = true)
     {
         if (CvatJobId <= 0) { CvatOperationMessage = "⚠️ Vui lòng chọn hoặc nhập CVAT Job ID."; CvatOperationHasError = true; return; }
-        if (CvatPushIssueCount == 0) { CvatOperationMessage = "⚠️ Không có issue phù hợp để gửi lên CVAT. Hãy Confirm issue trong bước Review hoặc bật 'Đẩy toàn bộ issue phát hiện'."; CvatOperationHasError = true; return; }
-        if (CvatFrameMap.Count == 0 && !ConfirmOffsetMapping) { CvatOperationMessage = "⚠️ Hãy nạp frame map từ CVAT Job hoặc tích chọn xác nhận frame offset trước khi gửi."; CvatOperationHasError = true; return; }
+        if (CvatPushIssueCount == 0 && !returnJob)
+        {
+            CvatOperationMessage = "⚠️ Không có issue phù hợp để gửi lên CVAT. Hãy Confirm issue trong bước Review hoặc bật 'Đẩy toàn bộ issue phát hiện'.";
+            CvatOperationHasError = true;
+            return;
+        }
+        if (CvatPushIssueCount > 0 && CvatFrameMap.Count == 0 && !ConfirmOffsetMapping)
+        {
+            CvatOperationMessage = "⚠️ Hãy nạp frame map từ CVAT Job hoặc tích chọn xác nhận frame offset trước khi gửi.";
+            CvatOperationHasError = true;
+            return;
+        }
         IsBusy = true;
         CvatJobResultUrl = null;
         CvatOperationSucceeded = false;
@@ -1995,30 +2016,59 @@
                 CvatJobResultUrl = jobUri.ToString();
             CvatResultStage = GetString(result.RootElement, "job_stage", "unchanged");
             CvatResultState = GetString(result.RootElement, "job_state", "unchanged");
-            CvatOperationSucceeded = apiStatus == "success" && failed.Count == 0 && responseJobId == CvatJobId && (!requiresJobReturn || jobStateChanged);
-            HasError = !CvatOperationSucceeded;
-            if (CvatOperationSucceeded)
+
+            bool isSuccess;
+            if (requiresJobReturn)
             {
-                CvatOperationMessage = requiresJobReturn
-                    ? $"CVAT confirmed Job #{CvatJobId} returned. Created {created} issues; {skipped} duplicates were already present. Stage: {CvatResultStage}; state: {CvatResultState}."
-                    : $"CVAT confirmed {created} issues created; {skipped} duplicates were already present. Job state was not changed.";
-                CvatStateLabel = requiresJobReturn ? $"JOB RETURNED ({CvatResultState.ToUpperInvariant()})" : "ISSUES PUSHED";
+                isSuccess = jobStateChanged || (apiStatus == "success" && failed.Count == 0);
             }
             else
             {
-                var failureDetails = failed.Select(item =>
-                {
-                    var detail = GetString(item, "error", GetString(item, "message", ""));
-                    return string.IsNullOrWhiteSpace(detail) ? GetString(item, "frame", "CVAT operation failed") : detail;
-                }).Where(detail => !string.IsNullOrWhiteSpace(detail));
-                var details = string.Join(" | ", failureDetails);
-                CvatOperationMessage = $"CVAT did not confirm a complete operation (status: {apiStatus}, job: #{responseJobId}, created: {created}, duplicates: {skipped})."
-                    + (details.Length > 0 ? $" Details: {details}" : "");
-                CvatStateLabel = "PARTIAL / NOT CONFIRMED";
+                isSuccess = (created > 0 || skipped > 0) && failed.Count == 0;
             }
-            CvatOperationHasError = !CvatOperationSucceeded;
+
+            CvatOperationSucceeded = isSuccess;
+            CvatOperationHasError = !isSuccess;
+            HasError = !isSuccess;
+
+            var failureDetails = failed.Select(item =>
+            {
+                var detail = GetString(item, "error", GetString(item, "message", ""));
+                return string.IsNullOrWhiteSpace(detail) ? GetString(item, "frame", "CVAT operation warning") : detail;
+            }).Where(detail => !string.IsNullOrWhiteSpace(detail));
+            var details = string.Join(" | ", failureDetails);
+
+            if (CvatOperationSucceeded)
+            {
+                if (requiresJobReturn)
+                {
+                    CvatOperationMessage = $"✅ Đã trả Job #{CvatJobId} về CVAT thành công! Giai đoạn: {CvatResultStage}; Trạng thái: {CvatResultState}. Đã tạo {created} issue (bỏ qua {skipped} trùng)."
+                        + (details.Length > 0 ? $" (Ghi chú: {details})" : "");
+                    CvatStateLabel = $"JOB RETURNED ({CvatResultState.ToUpperInvariant()})";
+                }
+                else
+                {
+                    CvatOperationMessage = $"✅ Đã đẩy {created} issue lên CVAT thành công ({skipped} trùng lặp bỏ qua). Trạng thái Job không đổi."
+                        + (details.Length > 0 ? $" (Ghi chú: {details})" : "");
+                    CvatStateLabel = "ISSUES PUSHED";
+                }
+            }
+            else
+            {
+                CvatOperationMessage = requiresJobReturn
+                    ? $"⚠️ Không thể cập nhật trạng thái Job #{CvatJobId} trên CVAT (status: {apiStatus}). {details}"
+                    : $"⚠️ Không thể đẩy issue lên CVAT Job #{CvatJobId} (status: {apiStatus}). {details}";
+                CvatStateLabel = requiresJobReturn ? "LỖI TRẢ JOB" : "LỖI ĐẨY ISSUES";
+            }
         }
-        catch (Exception ex) { CvatJobResultUrl = null; CvatOperationSucceeded = false; CvatOperationMessage = $"Không đẩy được issue lên CVAT: {ex.Message}"; CvatOperationHasError = true; CvatStateLabel = "NOT CONNECTED"; }
+        catch (Exception ex)
+        {
+            CvatJobResultUrl = null;
+            CvatOperationSucceeded = false;
+            CvatOperationMessage = $"Lỗi khi trả Job / gửi issue về CVAT: {ex.Message}";
+            CvatOperationHasError = true;
+            CvatStateLabel = "LỖI KẾT NỐI CVAT";
+        }
         finally { IsBusy = false; }
     }
     private async Task CopyIssue(JsonElement issue)

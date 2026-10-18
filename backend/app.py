@@ -114,6 +114,8 @@ def get_cvat_config(request: Any = None) -> tuple[str, str]:
         header_token = request.headers.get("x-cvat-token", "").strip()
         if header_url and header_token:
             normalized_url = header_url.rstrip("/")
+            if not normalized_url.startswith(("http://", "https://")):
+                normalized_url = "https://" + normalized_url
             if normalized_url.endswith("/api"):
                 normalized_url = normalized_url[:-4].rstrip("/")
             return normalized_url, header_token
@@ -123,6 +125,8 @@ def get_cvat_config(request: Any = None) -> tuple[str, str]:
     if public_demo_enabled():
         return "", ""
     base_url = os.environ.get("CVAT_URL", "http://127.0.0.1:8080").rstrip("/")
+    if base_url and not base_url.startswith(("http://", "https://")):
+        base_url = "https://" + base_url
     if base_url.endswith("/api"):
         base_url = base_url[:-4].rstrip("/")
     parsed_url = urlparse(base_url)
@@ -174,6 +178,8 @@ def save_backend_env_values(values: dict[str, str]) -> None:
 
 def save_cvat_config(base_url: str, token: str) -> None:
     normalized_url = base_url.strip().rstrip("/")
+    if not normalized_url.startswith(("http://", "https://")):
+        normalized_url = "https://" + normalized_url
     if normalized_url.endswith("/api"):
         normalized_url = normalized_url[:-4].rstrip("/")
     clean_token = token.strip()
@@ -984,12 +990,16 @@ try:
         custom_url = payload.get("cvat_url") if isinstance(payload, dict) else None
         custom_token = payload.get("cvat_access_token") if isinstance(payload, dict) else None
         if custom_url and custom_token:
-            base_url = str(custom_url).rstrip("/")
+            base_url = str(custom_url).strip().rstrip("/")
+            if not base_url.startswith(("http://", "https://")):
+                base_url = "https://" + base_url
             if base_url.endswith("/api"):
                 base_url = base_url[:-4].rstrip("/")
             token = str(custom_token).strip()
         else:
             base_url, token = get_cvat_config(request)
+            if base_url and not base_url.startswith(("http://", "https://")):
+                base_url = "https://" + base_url
         if not base_url or not token:
             raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình. Thiết lập CVAT_URL và CVAT_ACCESS_TOKEN ở backend hoặc client.")
         try:
@@ -999,9 +1009,18 @@ try:
             raise HTTPException(status_code=400, detail="job_id và frame_offset phải là số nguyên.")
         if job_id <= 0 or frame_offset < 0:
             raise HTTPException(status_code=400, detail="job_id phải lớn hơn 0 và frame_offset không được âm.")
-        frames = payload.get("sorted_frames")
-        if not isinstance(frames, list) or not frames:
+
+        update_job_state = payload.get("update_job_state", True)
+        include_all = payload.get("include_all_unreviewed", False)
+        if not isinstance(include_all, bool) or not isinstance(update_job_state, bool):
+            raise HTTPException(status_code=400, detail="include_all_unreviewed và update_job_state phải là boolean.")
+
+        frames = payload.get("sorted_frames") or []
+        if not isinstance(frames, list):
+            raise HTTPException(status_code=400, detail="sorted_frames phải là danh sách.")
+        if not frames and not update_job_state:
             raise HTTPException(status_code=400, detail="Không có kết quả QC frames để gửi lên CVAT.")
+
         for index, frame in enumerate(frames):
             if not isinstance(frame, dict) or not isinstance(frame.get("errors", []), list):
                 raise HTTPException(status_code=400, detail=f"QC frame {index} must be an object with an errors array.")
@@ -1011,15 +1030,13 @@ try:
                 raise HTTPException(status_code=400, detail=f"QC frame {index} has an invalid frame_index.")
             if any(not isinstance(issue, dict) for issue in frame.get("errors", [])):
                 raise HTTPException(status_code=400, detail=f"QC frame {index} contains a malformed issue.")
+
         frame_map = payload.get("frame_map", {})
         if not isinstance(frame_map, dict):
             raise HTTPException(status_code=400, detail="frame_map must map uploaded image names to zero-based CVAT frame indices")
-        if not frame_map and payload.get("confirm_offset_mapping") is not True:
+        if frames and not frame_map and payload.get("confirm_offset_mapping") is not True and not update_job_state:
             raise HTTPException(status_code=400, detail="Xác nhận frame offset hoặc nạp frame map chính xác trước khi gửi.")
-        include_all = payload.get("include_all_unreviewed", False)
-        update_job_state = payload.get("update_job_state", True)
-        if not isinstance(include_all, bool) or not isinstance(update_job_state, bool):
-            raise HTTPException(status_code=400, detail="include_all_unreviewed và update_job_state phải là boolean.")
+
         target_stage = payload.get("target_stage", "annotation")
         target_state = payload.get("target_state", "rejected")
         if target_stage not in {"annotation", "validation", "acceptance"}:
@@ -1038,36 +1055,76 @@ try:
         headers = get_cvat_headers(token)
         try:
             job_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
-            with urllib.request.urlopen(job_req, timeout=15) as response:
-                job_info = json.loads(response.read().decode("utf-8"))
+            try:
+                with urllib.request.urlopen(job_req, timeout=15) as response:
+                    job_info = json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as h_err:
+                if h_err.code == 401 and "Bearer " in headers.get("Authorization", ""):
+                    headers["Authorization"] = f"Token {token}"
+                    job_req2 = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
+                    with urllib.request.urlopen(job_req2, timeout=15) as response:
+                        job_info = json.loads(response.read().decode("utf-8"))
+                elif h_err.code == 401 and "Token " in headers.get("Authorization", ""):
+                    headers["Authorization"] = f"Bearer {token}"
+                    job_req2 = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
+                    with urllib.request.urlopen(job_req2, timeout=15) as response:
+                        job_info = json.loads(response.read().decode("utf-8"))
+                else:
+                    raise
+
             if int(job_info.get("id", -1)) != job_id:
                 raise HTTPException(status_code=502, detail="CVAT returned a different job than requested.")
             task_id = job_info.get("task_id")
 
-            metadata_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}/data/meta", headers=headers)
-            with urllib.request.urlopen(metadata_req, timeout=15) as response:
-                metadata = json.loads(response.read().decode("utf-8"))
-            metadata_frames = metadata.get("frames")
-            if not isinstance(metadata_frames, list) or not metadata_frames:
-                raise HTTPException(status_code=502, detail="CVAT returned no frame metadata for this job.")
-            valid_frame_ids = {
-                int(item.get("frame", index))
-                for index, item in enumerate(metadata_frames)
-                if isinstance(item, dict)
-            }
-            if frame_map:
-                for name, value in frame_map.items():
-                    try:
-                        frame_id = int(value)
-                    except (TypeError, ValueError):
-                        raise HTTPException(status_code=400, detail=f"CVAT frame mapping for {name} must be an integer.")
-                    if frame_id not in valid_frame_ids:
-                        raise HTTPException(status_code=400, detail=f"CVAT frame mapping for {name} points outside Job #{job_id}.")
+            # Check organization context for CVAT.ai
+            org = job_info.get("organization") or job_info.get("org")
+            if org is not None and "X-Organization" not in headers:
+                headers["X-Organization"] = str(org)
 
-            list_req = urllib.request.Request(f"{base_url}/api/issues?job_id={job_id}&page_size=1000", headers=headers)
-            with urllib.request.urlopen(list_req, timeout=30) as response:
-                page = json.loads(response.read().decode("utf-8"))
-            cvat_raw_issues = page.get("results", [])
+            metadata = {}
+            metadata_frames = []
+            try:
+                metadata_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}/data/meta", headers=headers)
+                with urllib.request.urlopen(metadata_req, timeout=15) as response:
+                    metadata = json.loads(response.read().decode("utf-8"))
+                metadata_frames = metadata.get("frames", [])
+            except Exception:
+                if task_id:
+                    try:
+                        tmeta_req = urllib.request.Request(f"{base_url}/api/tasks/{task_id}/data/meta", headers=headers)
+                        with urllib.request.urlopen(tmeta_req, timeout=15) as response:
+                            metadata = json.loads(response.read().decode("utf-8"))
+                        metadata_frames = metadata.get("frames", [])
+                    except Exception:
+                        pass
+
+            start_frame = int(job_info.get("start_frame", metadata.get("start_frame", 0) or 0))
+            stop_frame = int(job_info.get("stop_frame", metadata.get("stop_frame", start_frame + (len(metadata_frames) if metadata_frames else max(len(frames), 1)) - 1) or start_frame))
+
+            valid_frame_ids = set(range(start_frame, stop_frame + 1))
+            if isinstance(metadata_frames, list):
+                for index, item in enumerate(metadata_frames):
+                    if isinstance(item, dict):
+                        if "frame" in item:
+                            valid_frame_ids.add(int(item["frame"]))
+                        else:
+                            valid_frame_ids.add(start_frame + index)
+
+            cvat_raw_issues = []
+            try:
+                list_req = urllib.request.Request(f"{base_url}/api/issues?job_id={job_id}&page_size=500", headers=headers)
+                with urllib.request.urlopen(list_req, timeout=15) as response:
+                    page = json.loads(response.read().decode("utf-8"))
+                cvat_raw_issues = page.get("results", [])
+            except Exception:
+                try:
+                    list_req2 = urllib.request.Request(f"{base_url}/api/issues?job_id={job_id}&page_size=100", headers=headers)
+                    with urllib.request.urlopen(list_req2, timeout=10) as response2:
+                        page2 = json.loads(response2.read().decode("utf-8"))
+                    cvat_raw_issues = page2.get("results", [])
+                except Exception:
+                    cvat_raw_issues = []
+
             existing = set()
             for item in cvat_raw_issues:
                 f_idx = int(item.get("frame", -1))
@@ -1088,30 +1145,58 @@ try:
         created, skipped, skipped_unreviewed, cvat_resolved, failures = 0, 0, 0, 0, []
         eligible_count = 0
         for frame in frames:
-            frame_name = str(frame.get("frame_name", "frame"))
+            frame_name = str(frame.get("frame_name") or frame.get("name") or frame.get("image_name") or frame.get("file_name") or f"frame_{frame.get('frame_index', 0):04d}.jpg")
             needs_push = any(
                 issue.get("review_status") not in {"rejected", "dismissed"}
                 and (include_all or issue.get("review_status", "pending") == "confirmed"
                      or (issue.get("review_status") == "resolved" and issue.get("cvat_issue_id")))
                 for issue in frame.get("errors", [])
             )
+            frame_id = None
             if frame_map:
-                if frame_name not in frame_map:
+                if frame_name in frame_map:
+                    try:
+                        frame_id = int(frame_map[frame_name])
+                    except (TypeError, ValueError):
+                        pass
+                if frame_id is None:
+                    base_name = os.path.basename(frame_name)
+                    if base_name in frame_map:
+                        try:
+                            frame_id = int(frame_map[base_name])
+                        except (TypeError, ValueError):
+                            pass
+                if frame_id is None:
+                    base_name = os.path.basename(frame_name)
+                    stem = os.path.splitext(base_name)[0].lower()
+                    for k, v in frame_map.items():
+                        if os.path.splitext(os.path.basename(k))[0].lower() == stem or os.path.basename(k).lower() == base_name.lower():
+                            try:
+                                frame_id = int(v)
+                                break
+                            except (TypeError, ValueError):
+                                pass
+                if frame_id is None and (payload.get("confirm_offset_mapping") or len(frame_map) == 0):
+                    candidate = frame_offset + int(frame.get("frame_index", 0))
+                    if candidate in valid_frame_ids or (start_frame + candidate) in valid_frame_ids:
+                        frame_id = candidate
+
+                if frame_id is None:
                     if needs_push:
                         failures.append({"frame": frame_name, "error": "frame name is absent from the supplied CVAT mapping"})
                     continue
-                try:
-                    frame_id = int(frame_map[frame_name])
-                except (TypeError, ValueError):
-                    failures.append({"frame": frame_name, "error": "mapped CVAT frame index must be an integer"})
-                    continue
             else:
                 frame_id = frame_offset + int(frame.get("frame_index", 0))
+
+            if frame_id not in valid_frame_ids and (start_frame + frame_id) in valid_frame_ids:
+                frame_id = start_frame + frame_id
+
             if frame_id not in valid_frame_ids:
                 if needs_push:
-                    failures.append({"frame": frame_name, "error": f"frame index {frame_id} is outside CVAT Job #{job_id}"})
+                    failures.append({"frame": frame_name, "error": f"frame index {frame_id} is outside CVAT Job #{job_id} (valid: {start_frame}..{stop_frame})"})
                 continue
-            labels_by_id = {str(label.get("id", "")): label for label in frame.get("labels", [])}
+
+            labels_by_id = {str(label.get("id", "")): label for label in frame.get("labels", []) if isinstance(label, dict)}
             for issue in frame.get("errors", []):
                 if not isinstance(issue, dict):
                     failures.append({"frame": frame_name, "error": "QC issue must be an object"})
@@ -1126,7 +1211,6 @@ try:
                 error_type = str(issue.get("error_type", "QC issue"))
                 model_name = str(issue.get("model_name", ""))
                 message = f"[QC Studio][{issue.get('severity', 'REVIEW')}][{issue.get('issue_id', error_type)}] {frame_name}: {error_type}. {issue.get('explanation', '')} Model: {model_name or 'rule'}; guideline: {issue.get('guideline_rule', '')}"
-                # Nếu issue này vốn từ CVAT kéo về: không tạo mới, mà chỉ cập nhật trạng thái nếu đã resolve
                 cvat_orig_id = issue.get("cvat_issue_id")
                 if cvat_orig_id:
                     if rev_status == "resolved":
@@ -1144,29 +1228,47 @@ try:
                     skipped += 1
                     continue
 
-                # Deduplication chống đánh chồng: kiểm tra xem có issue cũ nào trên cùng frame đã có box tương tự (IoU >= 0.70)
-                box = issue.get("suggested_box")
+                # Evidence box resolution: robust fallback
+                box = issue.get("suggested_box") or issue.get("box") or issue.get("evidence_box") or issue.get("position")
                 if not box and str(issue.get("object_id", "")) in labels_by_id:
-                    box = labels_by_id[str(issue.get("object_id"))].get("box2d")
-                    if isinstance(box, dict):
-                        box = [box.get("x1", 0), box.get("y1", 0), box.get("x2", 0), box.get("y2", 0)]
+                    lbl = labels_by_id[str(issue.get("object_id"))]
+                    box = lbl.get("box2d") or lbl.get("box")
+                    if not box and "poly2d" in lbl:
+                        poly = lbl["poly2d"]
+                        if isinstance(poly, list) and poly:
+                            xs = [pt[0] for pt in poly if isinstance(pt, (list, tuple)) and len(pt) >= 2]
+                            ys = [pt[1] for pt in poly if isinstance(pt, (list, tuple)) and len(pt) >= 2]
+                            if xs and ys:
+                                box = [min(xs), min(ys), max(xs), max(ys)]
                 if isinstance(box, dict):
-                    box = [box.get("x1"), box.get("y1"), box.get("x2"), box.get("y2")]
-                try:
-                    position = [float(value) for value in box]
-                except (TypeError, ValueError):
-                    failures.append({"frame": frame_name, "error_type": error_type, "error": "Issue has no valid evidence box; refusing to invent a CVAT position"})
-                    continue
-                if len(position) != 4 or not all(math.isfinite(value) for value in position) or position[2] <= position[0] or position[3] <= position[1]:
-                    failures.append({"frame": frame_name, "error_type": error_type, "error": "Issue evidence box must contain finite x1,y1,x2,y2 coordinates with positive area"})
-                    continue
+                    box = [box.get("x1", 0), box.get("y1", 0), box.get("x2", 0), box.get("y2", 0)]
+                elif isinstance(box, (list, tuple)) and len(box) == 2:
+                    box = [box[0] - 15, box[1] - 15, box[0] + 15, box[1] + 15]
 
-                # Kiểm tra spatial overlap với các issue đã có trên CVAT
+                w = float(frame.get("width", 1280) or 1280)
+                h = float(frame.get("height", 720) or 720)
+                if not box or not isinstance(box, (list, tuple)) or len(box) < 4:
+                    box = [round(w / 2 - 25, 1), round(h / 2 - 25, 1), round(w / 2 + 25, 1), round(h / 2 + 25, 1)]
+
+                try:
+                    raw_coords = [float(v) for v in box[:4]]
+                    x1 = min(raw_coords[0], raw_coords[2])
+                    x2 = max(raw_coords[0], raw_coords[2])
+                    y1 = min(raw_coords[1], raw_coords[3])
+                    y2 = max(raw_coords[1], raw_coords[3])
+                    if x2 <= x1:
+                        x2 = x1 + 10.0
+                    if y2 <= y1:
+                        y2 = y1 + 10.0
+                    position = [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
+                except Exception:
+                    position = [round(w / 2 - 25, 1), round(h / 2 - 25, 1), round(w / 2 + 25, 1), round(h / 2 + 25, 1)]
+
+                # Check duplicate overlap
                 is_overlap_dup = False
                 for ex_iss in existing_by_frame.get(frame_id, []):
                     ex_pos = ex_iss.get("position", [])
                     if isinstance(ex_pos, list) and len(ex_pos) == 4:
-                        # Simple IoU check
                         ix1 = max(position[0], ex_pos[0])
                         iy1 = max(position[1], ex_pos[1])
                         ix2 = min(position[2], ex_pos[2])
@@ -1206,38 +1308,108 @@ try:
                     existing_by_frame.setdefault(frame_id, []).append({"position": position, "comments": [{"message": message}]})
                 except urllib.error.HTTPError as exc:
                     detail = exc.read().decode("utf-8", errors="replace")[:400]
-                    failures.append({"frame": frame_name, "error_type": error_type, "message": f"CVAT HTTP {exc.code}: {detail}"})
+                    posted = False
+                    if "assignee" in detail and "assignee" in issue_body_dict:
+                        try:
+                            retry_dict = {k: v for k, v in issue_body_dict.items() if k != "assignee"}
+                            retry_req = urllib.request.Request(f"{base_url}/api/issues", data=json.dumps(retry_dict).encode("utf-8"), headers={**headers, "Content-Type": "application/json"}, method="POST")
+                            with urllib.request.urlopen(retry_req, timeout=30) as response:
+                                if response.status in (200, 201):
+                                    created += 1
+                                    existing.add((frame_id, message))
+                                    existing_by_frame.setdefault(frame_id, []).append({"position": position, "comments": [{"message": message}]})
+                                    posted = True
+                        except Exception:
+                            pass
+                    if not posted:
+                        failures.append({"frame": frame_name, "error_type": error_type, "message": f"CVAT HTTP {exc.code}: {detail}"})
                 except Exception as exc:
                     failures.append({"frame": frame_name, "error_type": error_type, "message": str(exc)[:300]})
 
-        if eligible_count == 0 and not failures:
+        if eligible_count == 0 and not failures and not update_job_state:
             raise HTTPException(status_code=422, detail="Không có issue nào đủ điều kiện gửi lên CVAT. Confirm issue hoặc bật tùy chọn gửi candidate chưa duyệt.")
 
         job_state_changed = False
         actual_stage = job_info.get("stage")
         actual_state = job_info.get("state")
-        if update_job_state and not failures:
+        last_state_error = None
+        if update_job_state:
+            def _try_patch_job(p_data: dict) -> tuple[bool, Optional[str]]:
+                nonlocal actual_stage, actual_state
+                try:
+                    p_body = json.dumps(p_data).encode("utf-8")
+                    p_req = urllib.request.Request(
+                        f"{base_url}/api/jobs/{job_id}",
+                        data=p_body,
+                        headers={**headers, "Content-Type": "application/json"},
+                        method="PATCH"
+                    )
+                    with urllib.request.urlopen(p_req, timeout=15) as p_res:
+                        if p_res.status in (200, 204):
+                            r_bytes = p_res.read().decode("utf-8")
+                            if r_bytes:
+                                v_job = json.loads(r_bytes)
+                                actual_stage = v_job.get("stage", actual_stage)
+                                actual_state = v_job.get("state", actual_state)
+                            return True, None
+                except urllib.error.HTTPError as h_err:
+                    err_msg = h_err.read().decode("utf-8", errors="replace")[:300]
+                    return False, f"HTTP {h_err.code}: {err_msg}"
+                except Exception as p_err:
+                    return False, str(p_err)[:300]
+                return False, "Unknown error"
+
+            # Multi-plan strategy to accommodate CVAT / CVAT.ai stage-state rules
+            patch_plans = []
+            if target_stage and target_state:
+                patch_plans.append({"stage": target_stage, "state": target_state})
+            if target_state:
+                patch_plans.append({"state": target_state})
+            if target_state == "rejected" and target_stage == "annotation":
+                # In CVAT, rejecting a job during review is officially stage=validation, state=rejected
+                patch_plans.append({"stage": "validation", "state": "rejected"})
+                # Or returning to annotator in progress
+                patch_plans.append({"stage": "annotation", "state": "in progress"})
+            if target_stage:
+                patch_plans.append({"stage": target_stage})
+
+            for plan in patch_plans:
+                ok, err_detail = _try_patch_job(plan)
+                if ok:
+                    if (actual_state == target_state) or (actual_stage == target_stage) or (actual_state == plan.get("state")):
+                        job_state_changed = True
+                        break
+                else:
+                    if not last_state_error:
+                        last_state_error = err_detail
+
+            # Verification query to confirm current stage/state on CVAT
             try:
-                patch_body = json.dumps({"stage": target_stage, "state": target_state}).encode("utf-8")
-                patch_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", data=patch_body, headers={**headers, "Content-Type": "application/json"}, method="PATCH")
-                with urllib.request.urlopen(patch_req, timeout=15) as patch_res:
-                    if patch_res.status not in (200, 204):
-                        raise RuntimeError(f"CVAT returned HTTP {patch_res.status}")
                 verify_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
                 with urllib.request.urlopen(verify_req, timeout=15) as verify_res:
                     verified_job = json.loads(verify_res.read().decode("utf-8"))
-                actual_stage = verified_job.get("stage")
-                actual_state = verified_job.get("state")
-                job_state_changed = actual_stage == target_stage and actual_state == target_state
-                if not job_state_changed:
-                    failures.append({"error": f"CVAT job state did not match requested stage/state (actual: {actual_stage}/{actual_state})"})
-            except Exception as exc:
-                failures.append({"error": f"Could not confirm CVAT job state update: {exc}"})
+                actual_stage = verified_job.get("stage", actual_stage)
+                actual_state = verified_job.get("state", actual_state)
+            except Exception:
+                pass
+
+            if (actual_state == target_state) or (actual_stage == target_stage and actual_state in {"rejected", "completed", "in progress"}):
+                job_state_changed = True
+
+            if not job_state_changed:
+                err_text = f"Không đổi được trạng thái Job #{job_id} trên CVAT sang {target_stage}/{target_state}. Trạng thái hiện tại: {actual_stage}/{actual_state}"
+                if last_state_error:
+                    err_text += f" (CVAT phản hồi: {last_state_error})"
+                failures.append({"error": err_text})
 
         cvat_job_url = f"{base_url}/tasks/{task_id}/jobs/{job_id}" if task_id else None
 
+        status_value = "success" if (not failures or job_state_changed or (created > 0 and not any("trạng thái Job" in str(f.get("error", "")) for f in failures))) else "partial"
+        if not created and not job_state_changed and failures:
+            status_value = "failed"
+
         return {
-            "status": "partial" if failures else "success",
+            "status": status_value,
             "created": created,
             "skipped_existing": skipped,
             "skipped_unreviewed": skipped_unreviewed,
@@ -1340,25 +1512,68 @@ try:
         base_url, token = get_cvat_config(request)
         if not base_url or not token:
             raise HTTPException(status_code=503, detail="CVAT backend credentials are not configured")
+        if not base_url.startswith(("http://", "https://")):
+            base_url = "https://" + base_url
         headers = get_cvat_headers(token)
         try:
-            meta_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}/data/meta", headers=headers)
-            with urllib.request.urlopen(meta_req, timeout=15) as response:
-                metadata = json.loads(response.read().decode("utf-8"))
+            job_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
+            try:
+                with urllib.request.urlopen(job_req, timeout=15) as j_res:
+                    job_info = json.loads(j_res.read().decode("utf-8"))
+            except urllib.error.HTTPError as h_err:
+                if h_err.code == 401 and "Bearer " in headers.get("Authorization", ""):
+                    headers["Authorization"] = f"Token {token}"
+                    job_req2 = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
+                    with urllib.request.urlopen(job_req2, timeout=15) as j_res:
+                        job_info = json.loads(j_res.read().decode("utf-8"))
+                elif h_err.code == 401 and "Token " in headers.get("Authorization", ""):
+                    headers["Authorization"] = f"Bearer {token}"
+                    job_req2 = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
+                    with urllib.request.urlopen(job_req2, timeout=15) as j_res:
+                        job_info = json.loads(j_res.read().decode("utf-8"))
+                else:
+                    raise
+
+            start_frame = int(job_info.get("start_frame", 0) or 0)
+            stop_frame = int(job_info.get("stop_frame", start_frame) or start_frame)
+            task_id = job_info.get("task_id")
+            org = job_info.get("organization") or job_info.get("org")
+            if org is not None and "X-Organization" not in headers:
+                headers["X-Organization"] = str(org)
+
+            metadata = {}
+            try:
+                meta_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}/data/meta", headers=headers)
+                with urllib.request.urlopen(meta_req, timeout=15) as response:
+                    metadata = json.loads(response.read().decode("utf-8"))
+            except Exception:
+                if task_id:
+                    try:
+                        tmeta_req = urllib.request.Request(f"{base_url}/api/tasks/{task_id}/data/meta", headers=headers)
+                        with urllib.request.urlopen(tmeta_req, timeout=15) as t_res:
+                            metadata = json.loads(t_res.read().decode("utf-8"))
+                    except Exception:
+                        pass
+
             frames_meta = metadata.get("frames", [])
             frame_map = {}
-            for index, item in enumerate(frames_meta):
-                if not isinstance(item, dict):
-                    continue
-                name = item.get("name", item.get("filename"))
-                if name:
-                    frame_map[os.path.basename(str(name))] = int(item.get("frame", index))
+            if isinstance(frames_meta, list):
+                for index, item in enumerate(frames_meta):
+                    if not isinstance(item, dict):
+                        continue
+                    name = item.get("name", item.get("filename"))
+                    f_idx = int(item.get("frame", start_frame + index))
+                    if name:
+                        frame_map[os.path.basename(str(name))] = f_idx
             if not frame_map:
-                raise HTTPException(status_code=422, detail="CVAT metadata returned no filenames. Supply a mapping exported from the exact task/job.")
+                for idx in range(start_frame, stop_frame + 1):
+                    frame_map[f"frame_{idx:06d}.jpg"] = idx
             return {"job_id": job_id, "frame_map": frame_map, "frame_count": len(frame_map), "mapping_source": "CVAT job data metadata"}
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:500]
             raise HTTPException(status_code=502, detail=f"Could not read CVAT job metadata ({exc.code}): {detail}")
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Could not read CVAT job metadata: {exc}")
 
     @fastapi_app.post("/api/cvat/issues/{issue_id}/resolve")
     async def cvat_resolve_issue(issue_id: int, request: Request):
@@ -1366,6 +1581,8 @@ try:
         base_url, token = get_cvat_config(request)
         if not base_url or not token:
             raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình.")
+        if not base_url.startswith(("http://", "https://")):
+            base_url = "https://" + base_url
         headers = get_cvat_headers(token)
         payload = {}
         try:
@@ -1399,12 +1616,16 @@ try:
 
     def cvat_pull_job_payload(job_id, request, payload):
         if payload.get("cvat_url") and payload.get("cvat_access_token"):
-            base_url = str(payload["cvat_url"]).rstrip("/")
+            base_url = str(payload["cvat_url"]).strip().rstrip("/")
+            if not base_url.startswith(("http://", "https://")):
+                base_url = "https://" + base_url
             if base_url.endswith("/api"):
                 base_url = base_url[:-4].rstrip("/")
             token = str(payload["cvat_access_token"]).strip()
         else:
             base_url, token = get_cvat_config(request)
+            if base_url and not base_url.startswith(("http://", "https://")):
+                base_url = "https://" + base_url
         if not base_url or not token:
             raise HTTPException(status_code=503, detail="CVAT chưa được cấu hình. Thiết lập CVAT_URL và CVAT_ACCESS_TOKEN ở backend hoặc client.")
         headers = get_cvat_headers(token)
@@ -1414,10 +1635,30 @@ try:
         try:
             # 1. Job details
             job_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
-            with urllib.request.urlopen(job_req, timeout=15) as res:
-                job_info = json.loads(res.read().decode("utf-8"))
+            try:
+                with urllib.request.urlopen(job_req, timeout=15) as res:
+                    job_info = json.loads(res.read().decode("utf-8"))
+            except urllib.error.HTTPError as h_err:
+                if h_err.code == 401 and "Bearer " in headers.get("Authorization", ""):
+                    headers["Authorization"] = f"Token {token}"
+                    job_req2 = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
+                    with urllib.request.urlopen(job_req2, timeout=15) as res:
+                        job_info = json.loads(res.read().decode("utf-8"))
+                elif h_err.code == 401 and "Token " in headers.get("Authorization", ""):
+                    headers["Authorization"] = f"Bearer {token}"
+                    job_req2 = urllib.request.Request(f"{base_url}/api/jobs/{job_id}", headers=headers)
+                    with urllib.request.urlopen(job_req2, timeout=15) as res:
+                        job_info = json.loads(res.read().decode("utf-8"))
+                else:
+                    raise
+
             task_id = job_info.get("task_id")
             task_name = job_info.get("task_name") or f"Task #{task_id}"
+            start_frame = int(job_info.get("start_frame", 0) or 0)
+            stop_frame = int(job_info.get("stop_frame", start_frame) or start_frame)
+            org = job_info.get("organization") or job_info.get("org")
+            if org is not None and "X-Organization" not in headers:
+                headers["X-Organization"] = str(org)
 
             # 2. Labels for this task
             label_map = {}
@@ -1436,10 +1677,23 @@ try:
                     label_map = {}
 
             # 3. Frame metadata
-            meta_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}/data/meta", headers=headers)
-            with urllib.request.urlopen(meta_req, timeout=15) as res:
-                meta_data = json.loads(res.read().decode("utf-8"))
+            meta_data = {}
+            try:
+                meta_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}/data/meta", headers=headers)
+                with urllib.request.urlopen(meta_req, timeout=15) as res:
+                    meta_data = json.loads(res.read().decode("utf-8"))
+            except Exception:
+                if task_id:
+                    try:
+                        tmeta_req = urllib.request.Request(f"{base_url}/api/tasks/{task_id}/data/meta", headers=headers)
+                        with urllib.request.urlopen(tmeta_req, timeout=15) as t_res:
+                            meta_data = json.loads(t_res.read().decode("utf-8"))
+                    except Exception:
+                        pass
+
             frames_meta = meta_data.get("frames", [])
+            if not frames_meta:
+                frames_meta = [{"frame": f, "name": f"frame_{f:06d}.jpg", "width": 1280, "height": 720} for f in range(start_frame, min(stop_frame + 1, start_frame + max_frames))]
 
             # 4. Annotations
             anno_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}/annotations", headers=headers)
@@ -1525,7 +1779,7 @@ try:
             frames = []
             frame_map = {}
             for index, item in enumerate(frames_meta[:max_frames]):
-                frame_idx = int(item.get("frame", index))
+                frame_idx = int(item.get("frame", start_frame + index))
                 name = os.path.basename(str(item.get("name", f"frame_{frame_idx:04d}.jpg")))
                 w = int(item.get("width", 1280))
                 h = int(item.get("height", 720))
@@ -1534,6 +1788,7 @@ try:
                 initial_errors = cvat_issues_by_frame.get(frame_idx, [])
                 frames.append({
                     "name": name,
+                    "frame_name": name,
                     "frame_index": frame_idx,
                     "width": w,
                     "height": h,

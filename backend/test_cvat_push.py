@@ -71,3 +71,113 @@ def test_push_issues_to_cvat_payload_success(monkeypatch):
     assert result["created"] == 1
     assert result["failed"] == []
     assert any(method == "POST" and "/api/issues" in url for method, url in calls)
+
+
+def test_return_job_zero_issues_and_update_state(monkeypatch):
+    calls = []
+    current_job = {"id": 1, "task_id": 10, "stage": "annotation", "state": "in progress", "organization": "ai-team"}
+
+    def mock_urlopen(req, timeout=None):
+        url = req.full_url
+        method = req.get_method()
+        calls.append((method, url))
+        
+        resp = MagicMock()
+        resp.status = 200
+        if "/api/jobs/1" in url and "/data/meta" not in url:
+            if method == "PATCH":
+                patch_data = json.loads(req.data.decode("utf-8"))
+                current_job.update(patch_data)
+                data = dict(current_job)
+            else:
+                data = dict(current_job)
+        elif "/api/jobs/1/data/meta" in url:
+            data = {"frames": []}
+        elif "/api/issues" in url:
+            data = {"results": []}
+        else:
+            data = {}
+
+        resp.read.return_value = json.dumps(data).encode("utf-8")
+        resp.__enter__.return_value = resp
+        return resp
+
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+    payload = {
+        "cvat_url": "app.cvat.ai",  # Test URL without https://
+        "cvat_access_token": "valid_token_123",
+        "job_id": 1,
+        "frame_offset": 0,
+        "frame_map": {},
+        "update_job_state": True,
+        "target_stage": "validation",
+        "target_state": "rejected",
+        "sorted_frames": []  # Zero frames / zero issues return
+    }
+
+    req = MagicMock()
+    req.headers = {}
+    result = push_issues_to_cvat_payload(req, payload)
+
+    assert result["status"] == "success"
+    assert result["job_state_changed"] is True
+    assert result["job_stage"] == "validation"
+    assert result["job_state"] == "rejected"
+    assert any(method == "PATCH" and "/api/jobs/1" in url for method, url in calls)
+
+
+def test_return_job_fallback_plans(monkeypatch):
+    calls = []
+    current_job = {"id": 2, "task_id": 20, "stage": "annotation", "state": "in progress"}
+
+    def mock_urlopen(req, timeout=None):
+        url = req.full_url
+        method = req.get_method()
+        calls.append((method, url))
+        
+        resp = MagicMock()
+        resp.status = 200
+        if "/api/jobs/2" in url and "/data/meta" not in url:
+            if method == "PATCH":
+                patch_data = json.loads(req.data.decode("utf-8"))
+                # Simulate CVAT rejecting annotation/rejected but accepting validation/rejected
+                if patch_data.get("stage") == "annotation" and patch_data.get("state") == "rejected":
+                    err = urllib.error.HTTPError(url, 400, "Invalid stage-state pair", {}, io.BytesIO(b'{"state":["rejected is invalid for annotation"]}'))
+                    raise err
+                current_job.update(patch_data)
+                data = dict(current_job)
+            else:
+                data = dict(current_job)
+        elif "/api/jobs/2/data/meta" in url:
+            data = {"frames": [{"frame": 0, "name": "f0.jpg"}]}
+        elif "/api/issues" in url:
+            data = {"results": []}
+        else:
+            data = {}
+
+        resp.read.return_value = json.dumps(data).encode("utf-8")
+        resp.__enter__.return_value = resp
+        return resp
+
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+    payload = {
+        "cvat_url": "https://app.cvat.ai",
+        "cvat_access_token": "valid_token_123",
+        "job_id": 2,
+        "update_job_state": True,
+        "target_stage": "annotation",
+        "target_state": "rejected",
+        "sorted_frames": [{"frame_name": "f0.jpg", "frame_index": 0, "errors": []}]
+    }
+
+    req = MagicMock()
+    req.headers = {}
+    result = push_issues_to_cvat_payload(req, payload)
+
+    assert result["status"] == "success"
+    assert result["job_state_changed"] is True
+    # Successfully transitioned via fallback plan
+    assert result["job_state"] == "rejected"
+

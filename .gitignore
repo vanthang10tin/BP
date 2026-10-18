@@ -74,5 +74,6 @@ backend/.qc-data/
 *.user
 *.suo
 .qc-verify/
+scratch/
 
 
