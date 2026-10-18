@@ -54,16 +54,22 @@ Hệ thống đã được đóng gói thành một Dockerfile tối ưu All-in-
 
 ### Modal inference (tùy chọn)
 
-`deploy_vision.py` mặc định chạy CPU để tránh phát sinh phí GPU. Model weights được Modal tải khi container inference khởi động; cold start đầu tiên có thể lâu. Nếu tài khoản Modal đã bật thanh toán và muốn tăng tốc inference, đặt biến trước khi deploy:
+`deploy_vision.py` mặc định dùng GPU **T4**. BBox (YOLO26x + D-FINE-X) và segmentation (SegFormer Cityscapes 19 lớp + YOLO26x-Seg + SAM 2.1 Large) dùng các pool container riêng. Model của từng luồng chỉ nạp khi luồng đó nhận inference. SAM xử lý tối đa 16 box mỗi batch, không bỏ box còn lại.
 
 ```powershell
-$env:QC_MODAL_GPU = "L4"
-$env:QC_MODAL_YOLO_WEIGHTS = "yolo11x.pt"  # tùy chọn
-$env:QC_MODAL_RTDETR_WEIGHTS = "rtdetr-l.pt"  # tùy chọn
+python -m pip install modal
+$env:QC_MODAL_GPU = "T4" # hoặc L4; chuỗi rỗng để chạy CPU
 python -m modal deploy deploy_vision.py
+python test_modal_endpoint.py https://<your-modal-app>.modal.run
 ```
 
-Bỏ `QC_MODAL_GPU` hoặc để trống nếu muốn chạy CPU. GPU Modal cần phương thức thanh toán hợp lệ; xem [hướng dẫn GPU của Modal](https://modal.com/docs/guide/gpu).
+Các override weights hiện dùng: `QC_MODAL_YOLO_WEIGHTS`, `QC_MODAL_DFINE_WEIGHTS`, `QC_MODAL_YOLO_SEG_WEIGHTS`, `QC_MODAL_SAM_WEIGHTS`. Giá trị phải trỏ tới file có trong container hoặc tên được loader hỗ trợ; đường dẫn Windows không tự được upload. Các weights mặc định được tải khi build image; lỗi HTTP làm build thất bại. SegFormer được tải từ Hugging Face ở lần khởi động luồng segment đầu tiên.
+
+Đặt `QC_MODAL_API_URL` ở backend sau khi smoke test thành công. `/status` chỉ xác nhận API online và trả `model_readiness=not_checked`; cần gọi cả `/bbox` và `/segmentation` để kiểm chứng inference. Client chờ tối đa 600 giây cho mỗi lần inference, kể cả cold start. Script smoke test trả exit code 1 nếu bất kỳ endpoint nào lỗi; ảnh tổng hợp chỉ kiểm tra hợp đồng API, không đo độ chính xác.
+
+Ảnh đầu vào tối đa 10 MiB và 25 megapixel. Request sai trả HTTP 400; lỗi inference segment trả HTTP 503 để backend không coi kết quả rỗng là đánh giá thành công. BBox trả trạng thái từng detector trong `model_runs` khi `include_metadata=true`.
+
+GPU Modal cần tài khoản có quyền chạy GPU; xem [hướng dẫn GPU của Modal](https://modal.com/docs/guide/gpu).
 
 ---
 

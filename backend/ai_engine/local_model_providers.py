@@ -76,6 +76,8 @@ def _url(capability: str) -> str:
 
 
 def _post(capability: str, payload: dict[str, Any], timeout: int = 90) -> Any:
+    if _modal_base_url() and len(payload.get("image", "")) > 4 * ((10 * 1024 * 1024 + 2) // 3):
+        raise ProviderError("Modal image exceeds 10 MiB")
     data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     if len(data) > MAX_IMAGE_BYTES + 1_000_000:
         raise ProviderError("Image request exceeds the local CVAT function body limit")
@@ -527,7 +529,7 @@ def infer_bbox(image: bytes, threshold: float, classes: list[str], label_mapping
     if _modal_base_url():
         payload = {"image": base64.b64encode(image).decode("ascii"), "threshold": threshold,
                    "task_labels": classes, "mapping": label_mapping or {}, "include_metadata": True}
-        result = _post("bbox", payload, timeout=180)
+        result = _post("bbox", payload, timeout=600)
         info = {"id": "bbox", "name": "Modal bbox", "available": True, "privacy": "modal-cloud"}
         if isinstance(result, dict) and isinstance(result.get("predictions"), list):
             return result["predictions"], {**info, "model_runs": result.get("model_runs", [])}
@@ -585,7 +587,7 @@ def infer_segmentation(image: bytes, threshold: float, classes: list[str], label
     if _modal_base_url():
         payload = {"image": base64.b64encode(image).decode("ascii"), "threshold": threshold,
                    "task_labels": classes, "mapping": label_mapping or {}}
-        result = _post("segmentation", payload, timeout=180)
+        result = _post("segmentation", payload, timeout=600)
         if not isinstance(result, list):
             raise ProviderError("Modal segmentation returned an unexpected response")
         return result, {"id": "segmentation", "name": "Modal segmentation", "available": True, "privacy": "modal-cloud"}

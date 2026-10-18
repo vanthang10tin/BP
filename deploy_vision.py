@@ -18,12 +18,33 @@ def decode_image(value: str) -> bytes:
     data = base64.b64decode(value.split(",", 1)[-1] if value.startswith("data:") else value, validate=True)
     if not data or len(data) > 10 * 1024 * 1024:
         raise ValueError("Invalid or oversized image")
+    validate_image(data)
     return data
+
+
+def validate_image(data: bytes):
+    from PIL import Image
+    if not data or len(data) > 10 * 1024 * 1024:
+        raise ValueError("Invalid or oversized image")
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            if img.width * img.height > 25_000_000:
+                raise ValueError("Image exceeds 25 megapixels")
+            img.verify()
+    except Exception as exc:
+        raise ValueError("Invalid or oversized image") from exc
+
+
+def map_predictions(predictions, body):
+    mapping = body.get("mapping") or {}
+    if not isinstance(mapping, dict):
+        raise ValueError("mapping must be an object")
+    return [{**item, "label": mapping.get(item["label"], item["label"])} for item in predictions]
 
 
 modal_runtime_env = {
     key: os.environ[key]
-    for key in ("QC_MODAL_YOLO_WEIGHTS", "QC_MODAL_DFINE_WEIGHTS", "QC_MODAL_YOLO_SEG_WEIGHTS", "QC_MODAL_SAM_WEIGHTS")
+    for key in ("QC_MODAL_GPU", "QC_MODAL_YOLO_WEIGHTS", "QC_MODAL_DFINE_WEIGHTS", "QC_MODAL_YOLO_SEG_WEIGHTS", "QC_MODAL_SAM_WEIGHTS")
     if os.environ.get(key)
 }
 
@@ -49,10 +70,10 @@ image = (
     )
     .run_commands(
         "git clone --depth 1 https://github.com/Peterande/D-FINE.git /root/D-FINE",
-        "curl -L -o /root/dfine_x_coco.pth https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_x_coco.pth",
-        "curl -L -o /root/yolo26x.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x.pt",
-        "curl -L -o /root/yolo26x-seg.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x-seg.pt",
-        "curl -L -o /root/sam2.1_l.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/sam2.1_l.pt",
+        "curl --fail --location --retry 3 -o /root/dfine_x_coco.pth https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_x_coco.pth",
+        "curl --fail --location --retry 3 -o /root/yolo26x.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x.pt",
+        "curl --fail --location --retry 3 -o /root/yolo26x-seg.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x-seg.pt",
+        "curl --fail --location --retry 3 -o /root/sam2.1_l.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/sam2.1_l.pt",
     )
     .env(modal_runtime_env)
 )
@@ -87,32 +108,40 @@ COCO_CLASSES_80 = [
 
 
 # 2. Khởi tạo VisionEngine chạy trên GPU Nvidia T4
-@app.cls(gpu=os.environ.get("QC_MODAL_GPU", "T4"),
+@app.cls(gpu=os.environ.get("QC_MODAL_GPU", "T4").strip() or None,
          scaledown_window=300, timeout=600, max_containers=10)
 class VisionEngine:
+    # Modal creates separate container pools for bbox and segmentation.
+    pipeline: str = modal.parameter(default="bbox")
+
     @modal.enter()
     def load_models(self):
+        import torch
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.bbox_loaded = False
+        self.segmentation_loaded = False
+        self.dino_model = None
+
+    def load_bbox_models(self):
+        if self.bbox_loaded:
+            return
         import sys
         if "/root/D-FINE" not in sys.path:
             sys.path.insert(0, "/root/D-FINE")
-        from src.core import YAMLConfig
-        from src import nn, zoo
         import torch
         import torch.nn as nn
         import torchvision.transforms as T
-        from ultralytics import YOLO, SAM
+        from ultralytics import YOLO
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.yolo_weights = os.environ.get("QC_MODAL_YOLO_WEIGHTS", "/root/yolo26x.pt")
         self.dfine_weights = os.environ.get("QC_MODAL_DFINE_WEIGHTS", "/root/dfine_x_coco.pth")
-        self.yolo_seg_weights = os.environ.get("QC_MODAL_YOLO_SEG_WEIGHTS", "/root/yolo26x-seg.pt")
-        self.sam_weights = os.environ.get("QC_MODAL_SAM_WEIGHTS", "/root/sam2.1_l.pt")
-
         # 1. Flagship One-Stage: YOLO26x
         self.yolo = YOLO(self.yolo_weights).to(self.device)
 
         # 2. Flagship DETR: D-FINE-X (Peterande/D-FINE, arXiv:2410.13842)
         try:
+            from src.core import YAMLConfig
             dfine_cfg_path = "/root/D-FINE/configs/dfine/dfine_hgnetv2_x_coco.yml"
             dfine_cfg = YAMLConfig(dfine_cfg_path, resume=self.dfine_weights)
             if "HGNetv2" in dfine_cfg.yaml_cfg:
@@ -142,6 +171,14 @@ class VisionEngine:
             print(f"[Modal Cloud GPU] Failed to load D-FINE-X: {e}")
             self.dfine = None
 
+        self.bbox_loaded = True
+
+    def load_segmentation_models(self):
+        if self.segmentation_loaded:
+            return
+        from ultralytics import YOLO, SAM
+        self.yolo_seg_weights = os.environ.get("QC_MODAL_YOLO_SEG_WEIGHTS", "/root/yolo26x-seg.pt")
+        self.sam_weights = os.environ.get("QC_MODAL_SAM_WEIGHTS", "/root/sam2.1_l.pt")
         # 3. Flagship Segmentation: YOLO26x-Seg
         self.yolo_seg = YOLO(self.yolo_seg_weights).to(self.device)
 
@@ -156,10 +193,9 @@ class VisionEngine:
             print(f"[Modal Cloud GPU] SegFormer Cityscapes loaded on {self.device} for 19-class semantic coverage")
         except Exception as e:
             print(f"[Modal Cloud GPU] SegFormer load warning: {e}")
-            self.seg_model = None
+            raise RuntimeError("Semantic segmentation backbone unavailable") from e
 
-        self.dino_model = None
-        print(f"[Modal Cloud GPU] SOTA Flagship Models loaded on {self.device}: {self.yolo_weights}, {self.dfine_weights}, {self.yolo_seg_weights}, {self.sam_weights}")
+        self.segmentation_loaded = True
 
     def load_dino(self):
         if self.dino_model is None:
@@ -173,6 +209,7 @@ class VisionEngine:
         import torch
         from PIL import Image
 
+        self.load_bbox_models()
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         w, h = img.size
         with torch.inference_mode():
@@ -196,6 +233,9 @@ class VisionEngine:
                         "model": "yolo26x.pt",
                         "model_role": "detector_a"
                     })
+
+            if self.dfine is None:
+                model_runs.append({"role": "detector_b", "name": "dfine_x_coco.pth", "status": "failed"})
 
             # A2. D-FINE-X Fine-Grained Distribution Refinement DETR
             if self.dfine is not None:
@@ -227,6 +267,7 @@ class VisionEngine:
                             "model_role": "detector_b"
                         })
                 except Exception as ex:
+                    model_runs = [run for run in model_runs if run["role"] != "detector_b"]
                     model_runs.append({"role": "detector_b", "name": "dfine_x_coco.pth", "status": "failed"})
                     print(f"[WARN] D-FINE inference error: {ex}")
 
@@ -247,6 +288,7 @@ class VisionEngine:
         import numpy as np
         from PIL import Image
 
+        self.load_segmentation_models()
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         w, h = img.size
         segmentations = []
@@ -263,16 +305,20 @@ class VisionEngine:
                     logits = torch.nn.functional.interpolate(
                         outputs.logits, size=(h, w), mode="bilinear", align_corners=False
                     )
-                    pred_labels = logits.argmax(dim=1)[0].cpu().numpy()
+                    probabilities = logits.softmax(dim=1)[0]
+                    pred_labels = probabilities.argmax(dim=0).cpu().numpy()
                     
-                    # 9 lớp background/stuff chủ đạo của môi trường đường phố BDD100K
+                    # Full Cityscapes ontology, including rider and non-stop traffic signs.
                     SEMANTIC_CLASSES = {
                         0: "road", 1: "sidewalk", 2: "building", 3: "wall", 4: "fence",
-                        5: "pole", 8: "vegetation", 9: "terrain", 10: "sky"
+                        5: "pole", 6: "traffic light", 7: "traffic sign",
+                        8: "vegetation", 9: "terrain", 10: "sky", 11: "pedestrian",
+                        12: "rider", 13: "car", 14: "truck", 15: "bus",
+                        16: "train", 17: "motorcycle", 18: "bicycle"
                     }
                     for cls_id, cls_name in SEMANTIC_CLASSES.items():
                         bin_mask = (pred_labels == cls_id)
-                        if bin_mask.sum() > 100:
+                        if bin_mask.any():
                             y_idx, x_idx = np.where(bin_mask)
                             if len(x_idx) > 0:
                                 x1, y1, x2, y2 = int(x_idx.min()), int(y_idx.min()), int(x_idx.max()), int(y_idx.max())
@@ -282,11 +328,11 @@ class VisionEngine:
                                     "label": cls_name,
                                     "mask": roi + [x1, y1, x2, y2],
                                     "box": [x1, y1, x2, y2],
-                                    "confidence": 0.90,
+                                    "confidence": float(probabilities[cls_id][torch.as_tensor(bin_mask, device=self.device)].mean().item()),
                                     "model": "segformer-b0"
                                 })
                 except Exception as ex:
-                    print(f"[WARN] SegFormer background segmentation failed: {ex}")
+                    raise RuntimeError("Semantic segmentation inference failed") from ex
 
             # B1. YOLO26x-Seg Flagship Instance Segmentation (Phân giải cao 1280px phát hiện vật thể nhỏ/xa)
             try:
@@ -314,29 +360,31 @@ class VisionEngine:
                                     "model": "yolo26x-seg.pt"
                                 })
             except Exception as ex:
-                print(f"[WARN] YOLO26x-Seg failed: {ex}")
+                raise RuntimeError("Instance segmentation inference failed") from ex
 
             # B2. SAM 2.1 Large Segment Anything trên TẤT CẢ bounding boxes (Không cắt giới hạn :10)
             if seg_boxes:
                 try:
-                    sam_res = self.sam(img, bboxes=seg_boxes, verbose=False)
-                    if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
-                        for idx, seg in enumerate(sam_res[0].masks.xy):
-                            if len(seg) >= 3:
-                                flat_pts = [float(c) for pt in seg for c in pt]
-                                lbl = seg_labels[idx] if idx < len(seg_labels) else "object"
-                                cnf = seg_confs[idx] if idx < len(seg_confs) else 0.95
-                                bx = seg_boxes[idx] if idx < len(seg_boxes) else []
-                                segmentations.append({
-                                    "type": "polygon",
-                                    "label": lbl,
-                                    "points": flat_pts,
-                                    "box": bx,
-                                    "confidence": cnf,
-                                    "model": "sam2.1_l.pt"
-                                })
+                    for start in range(0, len(seg_boxes), 16):
+                        sam_res = self.sam(img, bboxes=seg_boxes[start:start + 16], verbose=False)
+                        if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
+                            for offset, seg in enumerate(sam_res[0].masks.xy):
+                                idx = start + offset
+                                if len(seg) >= 3:
+                                    flat_pts = [float(c) for pt in seg for c in pt]
+                                    lbl = seg_labels[idx] if idx < len(seg_labels) else "object"
+                                    cnf = seg_confs[idx] if idx < len(seg_confs) else 0.95
+                                    bx = seg_boxes[idx] if idx < len(seg_boxes) else []
+                                    segmentations.append({
+                                        "type": "polygon",
+                                        "label": lbl,
+                                        "points": flat_pts,
+                                        "box": bx,
+                                        "confidence": cnf,
+                                        "model": "sam2.1_l.pt"
+                                    })
                 except Exception as ex:
-                    print(f"[WARN] SAM 2.1 failed: {ex}")
+                    raise RuntimeError("SAM refinement failed") from ex
 
         return segmentations
 
@@ -382,18 +430,19 @@ def fastapi_app():
     )
 
     engine = VisionEngine()
+    segmentation_engine = VisionEngine(pipeline="segmentation")
 
     @web_app.get("/")
     @web_app.get("/status")
     def status():
         return {
             "status": "online",
-            "gpu": "T4",
+            "gpu": os.environ.get("QC_MODAL_GPU", "T4").strip() or None,
             "model": "Modal Dual-Detector (YOLO26x + D-FINE-X) & Flagship Seg (YOLO26x-Seg + SAM 2.1 Large)",
             "models": ["yolo26x.pt", "dfine_x_coco.pth", "yolo26x-seg.pt", "sam2.1_l.pt"],
-            "device": "cuda:0",
+            "device": "unknown",
             "capabilities": ["bbox", "segmentation", "sam2"],
-            "model_readiness": "ready",
+            "model_readiness": "not_checked",
             "label_count": 80,
             "type": "ensemble"
         }
@@ -402,6 +451,8 @@ def fastapi_app():
     async def post_root(request: Request):
         try:
             body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("JSON body must be an object")
             if body.get("action") == "status":
                 return status()
         except Exception:
@@ -425,22 +476,37 @@ def fastapi_app():
         if not img_bytes:
             return JSONResponse(status_code=400, content={"error": "Vui lòng upload file ảnh hoặc gửi JSON có field 'image' (base64)"})
 
-        res = await engine.predict_full.remote.aio(img_bytes, include_embedding=True)
-        return res
+        try:
+            validate_image(img_bytes)
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+        try:
+            bbox_result = await engine.predict_bbox.remote.aio(img_bytes)
+            masks = await segmentation_engine.predict_segmentation.remote.aio(img_bytes)
+            return {**bbox_result, "masks": masks, "dino_embedding_preview": []}
+        except Exception as exc:
+            return JSONResponse(status_code=503, content={"error": str(exc)})
 
-    # 2. Endpoint chuẩn QC Studio cho Object Detection (BBox) - YOLO26x + RT-DETR-X
+    # 2. QC Studio Object Detection (BBox) - YOLO26x + D-FINE-X
     @web_app.post("/bbox")
     async def bbox_infer(request: Request):
         try:
             body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("JSON body must be an object")
             if body.get("action") == "status":
                 return status()
             img_b64 = body.get("image", "")
             thresh = float(body.get("threshold", 0.25))
             if not 0 <= thresh <= 1:
                 raise ValueError("threshold must be between 0 and 1")
+            if not isinstance(body.get("mapping", {}), dict):
+                raise ValueError("mapping must be an object")
             img_bytes = decode_image(img_b64)
             res = await engine.predict_bbox.remote.aio(img_bytes, threshold=thresh)
+            res["predictions"] = map_predictions(res["predictions"], body)
+            for run in res.get("model_runs", []):
+                run["supported_classes"] = [body.get("mapping", {}).get(n, n) for n in run.get("supported_classes", [])]
             if body.get("include_metadata"):
                 return {"predictions": res.get("predictions", []), "model_runs": res.get("model_runs", [])}
             return res.get("predictions", [])
@@ -455,15 +521,21 @@ def fastapi_app():
     async def seg_infer(request: Request):
         try:
             body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("JSON body must be an object")
             if body.get("action") == "status":
                 return status()
             img_b64 = body.get("image", "")
             thresh = float(body.get("threshold", 0.25))
             if not 0 <= thresh <= 1:
                 raise ValueError("threshold must be between 0 and 1")
+            if not isinstance(body.get("mapping", {}), dict):
+                raise ValueError("mapping must be an object")
             img_bytes = decode_image(img_b64)
-            res = await engine.predict_segmentation.remote.aio(img_bytes, threshold=thresh)
-            return res if isinstance(res, list) else []
+            res = await segmentation_engine.predict_segmentation.remote.aio(img_bytes, threshold=thresh)
+            if not isinstance(res, list):
+                raise RuntimeError("Unexpected segmentation response")
+            return map_predictions(res, body)
         except (ValueError, TypeError) as e:
             return JSONResponse(status_code=400, content={"error": str(e)})
         except Exception as e:

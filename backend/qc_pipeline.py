@@ -763,7 +763,7 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
             if "SAM" in m_tag:
                 pred_sam[y1:y2 + 1, x1:x2 + 1][roi] = cid
                 mapped_classes_sam.add(canonical)
-            else:
+            elif "SEGFORMER" not in m_tag:
                 pred_yolo[y1:y2 + 1, x1:x2 + 1][roi] = cid
                 mapped_classes_yolo.add(canonical)
 
@@ -792,7 +792,7 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                 evidence_box = ([int(mismatch_x.min()), int(mismatch_y.min()), int(mismatch_x.max() + 1), int(mismatch_y.max() + 1)]
                                 if mismatch_x.size else None)
 
-                if has_dual_seg and (class_name in mapped_classes_yolo or class_name in mapped_classes_sam):
+                if has_dual_seg and class_name in mapped_classes_yolo and class_name in mapped_classes_sam:
                     # Tính IoU riêng cho YOLO26-Seg và SAM2.1
                     py_pixels = (pred_yolo == class_to_id[class_name]) & valid
                     u_y = int(np.logical_or(gt_pixels, py_pixels).sum())

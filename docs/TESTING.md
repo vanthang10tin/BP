@@ -16,7 +16,16 @@ dotnet build frontend/BlazorApp/BlazorApp.csproj
 
 `TMP`/`TEMP` trỏ vào workspace để các test tạo file tạm trong vùng ghi được trên một số môi trường Windows bị sandbox hóa. Python dependencies cho service nằm trong `requirements.txt`; pytest chỉ nằm trong `requirements-dev.txt`.
 
-## Lần xác minh checkout hiện tại
+## Kiểm tra hai luồng deploy — 2026-10-18
+
+- `python -m pytest backend -q`: **97 passed, 3 skipped**, 5 subtests passed, 1 cảnh báo Starlette/httpx; chạy ngoài sandbox vì TestClient và file `.env` tạm bị giới hạn trong sandbox. Ba test bị skip là tích hợp model local tùy chọn.
+- `dotnet run --project tests/BlazorRegression -c Release`: pass (numeric JSON, geometry, object IDs, upload limits, recovery).
+- Regression mới trong `backend/test_modal_deployment.py`: input lỗi không gọi GPU; route bbox/segment, mapping và metadata; lỗi model không trả thành công rỗng; status không giả định model đã nạp; đủ 19 lớp semantic kể cả vùng nhỏ; SAM batch 16+1; thiếu detector phụ được ghi nhận; lớp road không bị SAM báo bất đồng giả.
+- Các regression endpoint dùng model giả; test semantic/SAM dùng tensor CPU và output giả. Cần cài `modal` để thu thập bộ test deploy, `torch` để chạy các test tensor; không cần tải weights.
+- Smoke test endpoint Modal đang cấu hình: status, bbox và segmentation đều HTTP 200, trả list trên ảnh tổng hợp 320×240. Đây là **bản cloud trước các sửa đổi**, không xác nhận image mới build hoặc weights mới chạy đúng.
+- Bản sửa chưa được deploy lại. Sau deploy, chạy lại `python test_modal_endpoint.py <url>` và kiểm tra ảnh BDD100K có nhãn; smoke test không chứng minh độ chính xác model.
+
+## Kết quả ghi nhận trước lần sửa deploy
 
 - Pytest: **30 passed, 3 skipped**, 1 cảnh báo deprecation từ `starlette.testclient`, 5 subtests (chạy trong ~0.85s). Bao gồm parser linh hoạt, 5 bài kiểm tra upload HTTP và giới hạn dung lượng tải lên, kiểm tra cấu hình môi trường, đối chiếu honeypot một-một, bảo vệ chế độ public demo và synthetic segmentation mask. 3 bài kiểm tra weights model local tự động skip an toàn khi chưa cấu hình `QC_RUN_MODEL_TESTS=1` hoặc thiếu file weights cục bộ.
 - `python backend/test_qc_system.py`: **8/8 logic assertions passed**. Honeypot trong script là fixture tự dựng; kết quả đó không phải phép đo annotator/model hay benchmark dữ liệu thật.
