@@ -1076,27 +1076,38 @@ try:
                 raise HTTPException(status_code=502, detail="CVAT returned a different job than requested.")
             task_id = job_info.get("task_id")
 
-            # Check organization context for CVAT.ai
+            # Check organization context for CVAT.ai (must be non-empty valid org slug or ID)
             org = job_info.get("organization") or job_info.get("org")
-            if org is not None and "X-Organization" not in headers:
-                headers["X-Organization"] = str(org)
+            if org is not None and str(org).strip() not in ("", "0", "None", "null") and "X-Organization" not in headers:
+                headers["X-Organization"] = str(org).strip()
 
             metadata = {}
             metadata_frames = []
             try:
                 metadata_req = urllib.request.Request(f"{base_url}/api/jobs/{job_id}/data/meta", headers=headers)
                 with urllib.request.urlopen(metadata_req, timeout=15) as response:
-                    metadata = json.loads(response.read().decode("utf-8"))
-                metadata_frames = metadata.get("frames", [])
+                    raw_meta = json.loads(response.read().decode("utf-8"))
+                    if isinstance(raw_meta, dict):
+                        metadata = raw_meta
+                if isinstance(metadata.get("frames"), list):
+                    metadata_frames = metadata.get("frames")
             except Exception:
                 if task_id:
                     try:
                         tmeta_req = urllib.request.Request(f"{base_url}/api/tasks/{task_id}/data/meta", headers=headers)
                         with urllib.request.urlopen(tmeta_req, timeout=15) as response:
-                            metadata = json.loads(response.read().decode("utf-8"))
-                        metadata_frames = metadata.get("frames", [])
+                            raw_tmeta = json.loads(response.read().decode("utf-8"))
+                            if isinstance(raw_tmeta, dict):
+                                metadata = raw_tmeta
+                        if isinstance(metadata.get("frames"), list):
+                            metadata_frames = metadata.get("frames")
                     except Exception:
                         pass
+
+            if not isinstance(metadata, dict):
+                metadata = {}
+            if not isinstance(metadata_frames, list):
+                metadata_frames = []
 
             start_frame = int(job_info.get("start_frame", metadata.get("start_frame", 0) or 0))
             stop_frame = int(job_info.get("stop_frame", metadata.get("stop_frame", start_frame + (len(metadata_frames) if metadata_frames else max(len(frames), 1)) - 1) or start_frame))
@@ -1106,7 +1117,10 @@ try:
                 for index, item in enumerate(metadata_frames):
                     if isinstance(item, dict):
                         if "frame" in item:
-                            valid_frame_ids.add(int(item["frame"]))
+                            try:
+                                valid_frame_ids.add(int(item["frame"]))
+                            except (TypeError, ValueError):
+                                pass
                         else:
                             valid_frame_ids.add(start_frame + index)
 
@@ -1115,32 +1129,68 @@ try:
                 list_req = urllib.request.Request(f"{base_url}/api/issues?job_id={job_id}&page_size=500", headers=headers)
                 with urllib.request.urlopen(list_req, timeout=15) as response:
                     page = json.loads(response.read().decode("utf-8"))
-                cvat_raw_issues = page.get("results", [])
+                if isinstance(page, dict):
+                    cvat_raw_issues = page.get("results", [])
+                elif isinstance(page, list):
+                    cvat_raw_issues = page
             except Exception:
                 try:
                     list_req2 = urllib.request.Request(f"{base_url}/api/issues?job_id={job_id}&page_size=100", headers=headers)
                     with urllib.request.urlopen(list_req2, timeout=10) as response2:
                         page2 = json.loads(response2.read().decode("utf-8"))
-                    cvat_raw_issues = page2.get("results", [])
+                    if isinstance(page2, dict):
+                        cvat_raw_issues = page2.get("results", [])
+                    elif isinstance(page2, list):
+                        cvat_raw_issues = page2
                 except Exception:
                     cvat_raw_issues = []
 
+            if not isinstance(cvat_raw_issues, list):
+                cvat_raw_issues = []
+
+            def _get_issue_msg(iss_item: dict) -> str:
+                if not isinstance(iss_item, dict):
+                    return ""
+                direct_msg = iss_item.get("message")
+                if direct_msg:
+                    return str(direct_msg)
+                comms_obj = iss_item.get("comments")
+                if isinstance(comms_obj, list) and comms_obj:
+                    first = comms_obj[0]
+                    if isinstance(first, dict):
+                        return str(first.get("message") or "")
+                    return str(first)
+                elif isinstance(comms_obj, dict):
+                    if "results" in comms_obj and isinstance(comms_obj["results"], list) and comms_obj["results"]:
+                        first = comms_obj["results"][0]
+                        if isinstance(first, dict):
+                            return str(first.get("message") or "")
+                        return str(first)
+                    if "message" in comms_obj:
+                        return str(comms_obj["message"])
+                return ""
+
             existing = set()
-            for item in cvat_raw_issues:
-                f_idx = int(item.get("frame", -1))
-                comms = item.get("comments", [])
-                c_msg = str(comms[0].get("message", "")) if comms and isinstance(comms[0], dict) else str(item.get("message", ""))
-                existing.add((f_idx, c_msg))
             existing_by_frame = {}
             for item in cvat_raw_issues:
-                existing_by_frame.setdefault(int(item.get("frame", -1)), []).append(item)
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    f_idx = int(item.get("frame", -1))
+                except (TypeError, ValueError):
+                    f_idx = -1
+                c_msg = _get_issue_msg(item)
+                existing.add((f_idx, c_msg))
+                existing_by_frame.setdefault(f_idx, []).append(item)
         except HTTPException:
             raise
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:500]
             raise HTTPException(status_code=502, detail=f"Không xác minh được Job/frame/issues của CVAT ({exc.code}): {detail}")
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Không xác minh được Job/frame/issues của CVAT: {exc}")
+            import traceback
+            logger.error("Error during CVAT job/frame/issue verification: %s\n%s", exc, traceback.format_exc())
+            raise HTTPException(status_code=502, detail=f"Không xác minh được Job/frame/issues của CVAT ({type(exc).__name__}): {exc}")
 
         created, skipped, skipped_unreviewed, cvat_resolved, failures = 0, 0, 0, 0, []
         eligible_count = 0
@@ -1282,11 +1332,17 @@ try:
                         if union > 0 and (inter / union) >= 0.70:
                             is_overlap_dup = True
                             break
-                    for comm in ex_iss.get("comments", []):
-                        c_text = comm.get("message", "")
+                    ex_comms = ex_iss.get("comments", [])
+                    if isinstance(ex_comms, list):
+                        for comm in ex_comms:
+                            c_text = str(comm.get("message", "")) if isinstance(comm, dict) else str(comm)
+                            if str(issue.get("issue_id", "")) in c_text or (issue.get("object_id") and f":{issue.get('object_id')}:" in c_text):
+                                is_overlap_dup = True
+                                break
+                    elif isinstance(ex_comms, dict):
+                        c_text = str(ex_comms.get("message", ""))
                         if str(issue.get("issue_id", "")) in c_text or (issue.get("object_id") and f":{issue.get('object_id')}:" in c_text):
                             is_overlap_dup = True
-                            break
                     if is_overlap_dup:
                         break
 

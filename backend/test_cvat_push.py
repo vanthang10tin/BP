@@ -181,3 +181,56 @@ def test_return_job_fallback_plans(monkeypatch):
     # Successfully transitioned via fallback plan
     assert result["job_state"] == "rejected"
 
+
+def test_push_issues_with_complex_comments_and_zero_org(monkeypatch):
+    """Ensure issues with dict comments, int comment IDs, and organization=0 do not trigger KeyError: 0."""
+    calls = []
+
+    def mock_urlopen(req, timeout=None):
+        url = req.full_url
+        method = req.get_method()
+        calls.append((method, url))
+        resp = MagicMock()
+        resp.status = 200
+        if "/api/jobs/3" in url and "/data/meta" not in url:
+            data = {"id": 3, "task_id": 30, "stage": "annotation", "state": "in progress", "organization": 0}
+        elif "/api/jobs/3/data/meta" in url:
+            data = {"frames": None}  # None frames test
+        elif "/api/issues" in url:
+            # Issues containing dict comments and int comments
+            data = {
+                "results": [
+                    {"id": 101, "frame": 0, "comments": {"count": 0, "results": []}},
+                    {"id": 102, "frame": 0, "comments": [555, 556]},
+                    {"id": 103, "frame": 0, "comments": {"message": "dict comment text"}},
+                ]
+            }
+        else:
+            data = {}
+        resp.read.return_value = json.dumps(data).encode("utf-8")
+        resp.__enter__.return_value = resp
+        return resp
+
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+    payload = {
+        "cvat_url": "https://app.cvat.ai",
+        "cvat_access_token": "valid_token_123",
+        "job_id": 3,
+        "update_job_state": True,
+        "target_stage": "annotation",
+        "target_state": "in progress",
+        "sorted_frames": [{"frame_name": "f0.jpg", "frame_index": 0, "errors": []}]
+    }
+
+    req = MagicMock()
+    req.headers = {}
+    result = push_issues_to_cvat_payload(req, payload)
+
+    assert result["status"] == "success"
+    assert result["job_state_changed"] is True
+    # Verify X-Organization header was NOT set to "0"
+    for method, url in calls:
+        assert req.headers.get("X-Organization") != "0"
+
+
