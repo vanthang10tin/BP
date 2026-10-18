@@ -44,6 +44,8 @@ Kết quả gần nhất và phạm vi kiểm tra phải được ghi trong [doc
 
 Cấu hình `Dockerfile` và `render.yaml` đóng gói toàn diện cả Blazor Web App (.NET 10) và Python FastAPI backend trong cùng một container. Bản public bật `QC_PUBLIC_DEMO=true`: các chức năng ghi credential Gemini/CVAT bị khóa; filesystem của dịch vụ không phải nơi lưu dữ liệu bền vững. Xem [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) trước khi tạo dịch vụ.
 
+Tích hợp Modal là tùy chọn. Hãy cấu hình `QC_MODAL_API_URL` bằng endpoint thuộc deployment Modal của bạn; repo không trỏ sẵn tới tài khoản cá nhân. Để trống biến này nếu không dùng Modal.
+
 ## Tài liệu
 
 - [Kiến trúc](docs/ARCHITECTURE.md)

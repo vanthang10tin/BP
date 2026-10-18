@@ -36,7 +36,7 @@ class ProviderError(RuntimeError):
     pass
 
 
-DEFAULT_MODAL_URL = "https://vanthang10tin--vision-pipeline-api-fastapi-app.modal.run"
+DEFAULT_MODAL_URL = ""
 
 
 def _modal_base_url() -> str:
@@ -103,27 +103,26 @@ def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
     if modal_url:
         result = {"id": capability, "available": False, "privacy": "modal-cloud",
                   "name": "Modal Cloud", "device": "unknown", "supported_classes": []}
-        if capability not in {"bbox", "segmentation", "sam2"}:
-            result["error"] = f"Modal does not provide the {capability} contract"
-            return result
-        try:
-            req = urllib.request.Request(f"{modal_url}/status", headers={"User-Agent": "QC-Studio"})
-            with urllib.request.urlopen(req, timeout=min(timeout, 12)) as res:
-                info = json.loads(res.read().decode())
-            if not isinstance(info, dict) or info.get("status") not in {"online", "ok"}:
-                raise ProviderError("Unexpected Modal status response")
-            if capability not in info.get("capabilities", ["bbox", "segmentation", "sam2"]):
-                raise ProviderError(f"Modal does not advertise {capability}")
-            display_name = info.get("model") or f"Modal Cloud ({capability})"
-            if not display_name.startswith("Modal"):
-                display_name = f"Modal Cloud ({display_name})"
-            result.update(available=True, name=display_name,
-                          device=info.get("device", "cuda:0" if info.get("gpu") else "cpu"),
-                          type="mask" if capability in {"segmentation", "sam2"} else "bbox",
-                          label_count=info.get("label_count", 80),
-                          supported_classes=list(set(COCO_TO_BDD100K.values())), thresholds={}, error=None)
-        except Exception as exc:
-            result["error"] = f"Modal endpoint unavailable: {exc}"
+        if capability in {"bbox", "segmentation", "sam2"}:
+            try:
+                req = urllib.request.Request(f"{modal_url}/status", headers={"User-Agent": "QC-Studio"})
+                with urllib.request.urlopen(req, timeout=min(timeout, 12)) as res:
+                    info = json.loads(res.read().decode())
+                if isinstance(info, dict) and info.get("status") in {"online", "ok"}:
+                    if capability in info.get("capabilities", ["bbox", "segmentation", "sam2"]):
+                        display_name = info.get("model") or f"Modal Cloud ({capability})"
+                        if not display_name.startswith("Modal"):
+                            display_name = f"Modal Cloud ({display_name})"
+                        result.update(available=True, name=display_name,
+                                      device=info.get("device", "cuda:0" if info.get("gpu") else "cpu"),
+                                      type="mask" if capability in {"segmentation", "sam2"} else "bbox",
+                                      label_count=info.get("label_count", 80),
+                                      supported_classes=list(set(COCO_TO_BDD100K.values())), thresholds={}, error=None)
+                        _STATUS_CACHE[cache_key] = (time.monotonic(), result)
+                        return dict(result)
+            except Exception as exc:
+                result["error"] = f"Modal status unavailable: {type(exc).__name__}"
+        result.setdefault("error", "Modal does not advertise the requested capability")
         _STATUS_CACHE[cache_key] = (time.monotonic(), result)
         return dict(result)
 
@@ -137,7 +136,7 @@ def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
                     "id": "bbox",
                     "available": True,
                     "privacy": "loopback",
-                    "name": "YOLO26x + DINOv3 (Dual Ensemble)",
+                    "name": "YOLO26x + D-FINE-X (Dual Ensemble)",
                     "device": str(getattr(y26, "device", "cpu")),
                     "type": "bbox",
                     "label_count": len(y26.names),
@@ -280,39 +279,43 @@ def _get_yolo26():
             preferred_order = ["yolo26x.pt", "yolo11x.pt", "yolo26n.pt"]
             candidates = _resolve_model_candidates(preferred_order)
             if not candidates:
-                print("[INFO] YOLO26 weights not found locally; skipping inference instead of downloading weights.")
                 return None
             model_path = candidates[0]
         _YOLO26_MODEL = YOLO(model_path)
+    except (ImportError, ModuleNotFoundError):
+        _YOLO26_MODEL = None
     except Exception as exc:
         print(f"[WARN] Failed to load YOLO26: {exc}")
         _YOLO26_MODEL = None
     return _YOLO26_MODEL
 
 
-_DINOV3_MODEL = None
-_DINOV3_LOAD_ATTEMPTED = False
+_RTDETR_MODEL = None
+_RTDETR_LOAD_ATTEMPTED = False
 
 
-def _get_dinov3():
-    global _DINOV3_MODEL, _DINOV3_LOAD_ATTEMPTED
-    if _DINOV3_MODEL is not None or _DINOV3_LOAD_ATTEMPTED:
-        return _DINOV3_MODEL
-    _DINOV3_LOAD_ATTEMPTED = True
+def _get_rtdetr():
+    global _RTDETR_MODEL, _RTDETR_LOAD_ATTEMPTED
+    if _RTDETR_MODEL is not None or _RTDETR_LOAD_ATTEMPTED:
+        return _RTDETR_MODEL
+    _RTDETR_LOAD_ATTEMPTED = True
     try:
         from ultralytics import RTDETR
-        weights_override = os.environ.get("QC_DINOV3_WEIGHTS")
+        # Keep the former variable as a compatibility fallback for existing deployments.
+        weights_override = os.environ.get("QC_RTDETR_WEIGHTS") or os.environ.get("QC_DINOV3_WEIGHTS")
         if weights_override and os.path.exists(weights_override):
             model_path = weights_override
         else:
             candidates = _resolve_model_candidates(["rtdetr-x.pt", "rtdetr-l.pt"])
             model_path = candidates[0] if candidates else None
         if model_path:
-            _DINOV3_MODEL = RTDETR(model_path)
+            _RTDETR_MODEL = RTDETR(model_path)
+    except (ImportError, ModuleNotFoundError):
+        _RTDETR_MODEL = None
     except Exception as exc:
-        print(f"[WARN] Failed to load DINOv3 (RT-DETR): {exc}")
-        _DINOV3_MODEL = None
-    return _DINOV3_MODEL
+        print(f"[WARN] Failed to load RT-DETR: {exc}")
+        _RTDETR_MODEL = None
+    return _RTDETR_MODEL
 
 
 def _get_yolo26_seg():
@@ -330,6 +333,8 @@ def _get_yolo26_seg():
             model_path = candidates[0] if candidates else None
         if model_path:
             _YOLO26_SEG_MODEL = YOLO(model_path)
+    except (ImportError, ModuleNotFoundError):
+        _YOLO26_SEG_MODEL = None
     except Exception as exc:
         print(f"[WARN] Failed to load YOLO26-Seg: {exc}")
         _YOLO26_SEG_MODEL = None
@@ -350,6 +355,8 @@ def _get_sam2():
         candidates = _resolve_model_candidates(["sam2.1_l.pt", "sam2.1_b.pt", "sam2.1_t.pt"])
         if candidates:
             _SAM2_MODEL = SAM(candidates[0])
+    except (ImportError, ModuleNotFoundError):
+        _SAM2_MODEL = None
     except Exception as exc:
         print(f"[WARN] Failed to load SAM 2.1: {exc}")
         _SAM2_MODEL = None
@@ -358,21 +365,25 @@ def _get_sam2():
 
 def _infer_yolo26_native(image: bytes, threshold: float, classes: list[str], label_mapping: dict[str, str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     yolo_model = _get_yolo26()
-    dino_model = _get_dinov3()
-    if yolo_model is None and dino_model is None:
-        raise ProviderError("Neither YOLO26 nor DINOv3 model is available locally.")
+    rtdetr_model = _get_rtdetr()
+    if yolo_model is None and rtdetr_model is None:
+        raise ProviderError("Neither YOLO26 nor RT-DETR model is available locally.")
 
     mapping = dict(COCO_TO_BDD100K)
     if label_mapping:
         mapping.update(label_mapping)
 
     predictions = []
+    model_runs = []
+    yolo_name = os.path.basename(str(getattr(yolo_model, "ckpt_path", "YOLO (weights unknown)")))
+    rtdetr_name = os.path.basename(str(getattr(rtdetr_model, "ckpt_path", "RT-DETR (weights unknown)")))
     with Image.open(io.BytesIO(image)) as pil_img:
         img_w, img_h = pil_img.size
 
         # 1. Run YOLO26x
         if yolo_model is not None:
             res_y = yolo_model.predict(pil_img, conf=threshold, imgsz=1280, verbose=False)[0]
+            model_runs.append({"role": "detector_a", "name": yolo_name, "status": "success"})
             if res_y.boxes is not None:
                 for box in res_y.boxes:
                     cls_id = int(box.cls[0].item())
@@ -380,48 +391,49 @@ def _infer_yolo26_native(image: bytes, threshold: float, classes: list[str], lab
                     target_label = mapping.get(raw_label, raw_label)
                     xyxy = [float(coord) for coord in box.xyxy[0].tolist()]
                     conf = float(box.conf[0].item())
-                    bw = xyxy[2] - xyxy[0]
-                    if xyxy[1] >= img_h * 0.65 and xyxy[3] >= img_h * 0.92 and bw >= img_w * 0.6:
-                        continue
                     predictions.append({
                         "type": "rectangle",
                         "label": target_label,
                         "points": xyxy,
                         "confidence": conf,
-                        "model": "YOLO26"
+                        "model": yolo_name, "model_role": "detector_a"
                     })
 
-        # 2. Run DINOv3 (RT-DETR Transformer)
-        if dino_model is not None:
+        # 2. Run RT-DETR as the second bbox detector.
+        if rtdetr_model is not None:
             try:
-                res_d = dino_model.predict(pil_img, conf=threshold, imgsz=1280, verbose=False)[0]
+                res_d = rtdetr_model.predict(pil_img, conf=threshold, imgsz=1280, verbose=False)[0]
+                model_runs.append({"role": "detector_b", "name": rtdetr_name, "status": "success"})
                 if res_d.boxes is not None:
                     for box in res_d.boxes:
                         cls_id = int(box.cls[0].item())
-                        raw_label = dino_model.names.get(cls_id, str(cls_id))
+                        raw_label = rtdetr_model.names.get(cls_id, str(cls_id))
                         target_label = mapping.get(raw_label, raw_label)
                         xyxy = [float(coord) for coord in box.xyxy[0].tolist()]
                         conf = float(box.conf[0].item())
-                        bw = xyxy[2] - xyxy[0]
-                        if xyxy[1] >= img_h * 0.65 and xyxy[3] >= img_h * 0.92 and bw >= img_w * 0.6:
-                            continue
                         predictions.append({
                             "type": "rectangle",
                             "label": target_label,
                             "points": xyxy,
                             "confidence": conf,
-                            "model": "DINOv3"
+                            "model": rtdetr_name, "model_role": "detector_b"
                         })
             except Exception as exc:
-                print(f"[WARN] Local DINOv3 inference failed: {exc}")
+                model_runs = [r for r in model_runs if r["role"] != "detector_b"]
+                model_runs.append({"role": "detector_b", "name": rtdetr_name, "status": "failed"})
+                print(f"[WARN] Local RT-DETR inference failed: {exc}")
 
-    active_name = "YOLO26 + DINOv3 Ensemble" if (yolo_model and dino_model) else ("Ultralytics YOLO26" if yolo_model else "DINOv3 Transformer")
+    for run in model_runs:
+        model = yolo_model if run["role"] == "detector_a" else rtdetr_model
+        run["supported_classes"] = sorted({mapping.get(n, n) for n in model.names.values()})
+    active_name = " + ".join(r["name"] for r in model_runs if r["status"] == "success")
     info = {
         "id": "bbox",
+        "model_runs": model_runs,
         "available": True,
         "privacy": "loopback",
         "name": active_name,
-        "device": str(getattr(yolo_model or dino_model, "device", "cpu")),
+        "device": str(getattr(yolo_model or rtdetr_model, "device", "cpu")),
         "type": "bbox",
         "label_count": len(yolo_model.names) if yolo_model else 80,
         "supported_classes": list(set(mapping.values())),
@@ -514,14 +526,14 @@ def infer_bbox(image: bytes, threshold: float, classes: list[str], label_mapping
 
     if _modal_base_url():
         payload = {"image": base64.b64encode(image).decode("ascii"), "threshold": threshold,
-                   "task_labels": classes, "mapping": label_mapping or {}}
+                   "task_labels": classes, "mapping": label_mapping or {}, "include_metadata": True}
         result = _post("bbox", payload, timeout=180)
-        if not isinstance(result, list):
-            raise ProviderError("Modal bbox returned an unexpected response")
-        info = provider_info("bbox")
-        info["available"] = True
-        info["error"] = None
-        return result, info
+        info = {"id": "bbox", "name": "Modal bbox", "available": True, "privacy": "modal-cloud"}
+        if isinstance(result, dict) and isinstance(result.get("predictions"), list):
+            return result["predictions"], {**info, "model_runs": result.get("model_runs", [])}
+        if isinstance(result, list):
+            return result, info
+        raise ProviderError("Modal bbox returned an unexpected response")
 
     pref = (preferred_model or os.environ.get("QC_BBOX_PROVIDER", "")).strip().lower()
     if pref in ("dino", "dinov3", "panoptic_bbox"):
@@ -576,10 +588,7 @@ def infer_segmentation(image: bytes, threshold: float, classes: list[str], label
         result = _post("segmentation", payload, timeout=180)
         if not isinstance(result, list):
             raise ProviderError("Modal segmentation returned an unexpected response")
-        info = provider_info("segmentation")
-        info["available"] = True
-        info["error"] = None
-        return result, info
+        return result, {"id": "segmentation", "name": "Modal segmentation", "available": True, "privacy": "modal-cloud"}
 
     pref = (preferred_model or os.environ.get("QC_SEGMENTATION_PROVIDER", "")).strip().lower()
 

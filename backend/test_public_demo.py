@@ -1,6 +1,5 @@
-from fastapi.testclient import TestClient
-
 from app import fastapi_app, get_cvat_config
+from fastapi.testclient import TestClient
 
 
 def test_public_demo_blocks_shared_credential_writes(monkeypatch):

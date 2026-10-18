@@ -1,6 +1,7 @@
 """Opt-in Gemini vision proposals. Credentials stay in the backend environment."""
 import base64
 import json
+import math
 import os
 import urllib.error
 import urllib.request
@@ -274,7 +275,7 @@ def compile_guideline(guideline_text: str) -> dict:
         "Extract only rules and thresholds stated explicitly in the supplied annotation guideline. Do not invent policies, class lists, thresholds, or defaults. If a value is absent, omit it. This output is a draft for human review, not an approved policy.\n"
         "Extract target classes, class aliases/mapping, detector confidence thresholds, geometry constraints (min box size, min area), "
         "and 3-5 concise key principles.\n\n"
-        "Guideline text:\n" + guideline_text[:12000]
+        "Guideline text:\n" + guideline_text
     )
 
     body = {
@@ -299,7 +300,7 @@ def compile_guideline(guideline_text: str) -> dict:
                     "min_mask_iou": {"type": "NUMBER"},
                     "key_principles": {"type": "ARRAY", "items": {"type": "STRING"}}
                 },
-                "required": ["target_classes", "class_aliases", "min_box_pixels", "key_principles"]
+                "required": ["target_classes", "class_aliases", "key_principles"]
             }
         }
     }
@@ -342,6 +343,119 @@ def compile_guideline(guideline_text: str) -> dict:
         return res
 
 
+MODEL_PRIMARY_ROAD_CLASSES = [
+    "car", "truck", "bus", "motorcycle", "bicycle", "pedestrian", "rider",
+    "traffic light", "traffic sign", "train"
+]
+
+ALL_KNOWN_MODEL_DETECTION_CLASSES = [
+    "person", "pedestrian", "rider", "bicycle", "car", "motorcycle", "airplane", "bus",
+    "train", "truck", "boat", "traffic light", "traffic sign", "fire hydrant", "stop sign",
+    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant",
+    "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase",
+    "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork",
+    "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli",
+    "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant",
+    "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard",
+    "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book",
+    "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
+]
+
+
+def _heuristic_align_taxonomy(guideline_text: str, dataset_classes: list[str]) -> dict:
+    known_aliases = {
+        "person": "pedestrian", "people": "pedestrian", "human": "pedestrian", "nguoi": "pedestrian",
+        "cyclist": "rider", "bicyclist": "rider", "motorcyclist": "rider",
+        "auto": "car", "automobile": "car", "suv": "car", "taxi": "car", "o to": "car", "oto": "car", "xe hoi": "car",
+        "van": "truck", "xe tai": "truck", "pickup": "truck",
+        "xe buyt": "bus", "xe bus": "bus",
+        "xe may": "motorcycle", "motorbike": "motorcycle", "scooter": "motorcycle",
+        "xe dap": "bicycle", "bike": "bicycle",
+        "traffic_light": "traffic light", "den giao thong": "traffic light",
+        "traffic_sign": "traffic sign", "bien bao": "traffic sign", "stop sign": "traffic sign"
+    }
+
+    req_classes = set()
+    for c in dataset_classes:
+        c_str = str(c).strip().lower()
+        if c_str:
+            req_classes.add(c_str)
+
+    if guideline_text:
+        import re
+        for line in guideline_text.splitlines():
+            line_clean = line.strip()
+            m = re.match(r"^[-*•]\s*([a-zA-Z0-9_\s]{2,25}):?", line_clean)
+            if m:
+                cls_cand = m.group(1).strip().lower()
+                if len(cls_cand) < 25 and not cls_cand.startswith("độ") and not cls_cand.startswith("kích"):
+                    req_classes.add(cls_cand)
+
+    if not req_classes:
+        req_classes = set(MODEL_PRIMARY_ROAD_CLASSES)
+
+    active_classes = []
+    unsupported_classes = []
+    model_canonical_set = set(MODEL_PRIMARY_ROAD_CLASSES)
+
+    for c in sorted(req_classes):
+        norm_c = known_aliases.get(c, c)
+        if norm_c in model_canonical_set:
+            if c not in active_classes:
+                active_classes.append(c)
+        else:
+            if c not in unsupported_classes:
+                unsupported_classes.append(c)
+
+    excluded_model_classes = [c for c in ALL_KNOWN_MODEL_DETECTION_CLASSES
+                              if c not in active_classes and c not in req_classes and known_aliases.get(c, c) not in active_classes]
+
+    total_req = len(active_classes) + len(unsupported_classes)
+    coverage = round((len(active_classes) / total_req * 100), 1) if total_req > 0 else 100.0
+
+    summary_parts = [
+        f"Hội đồng AI (YOLO26x + RT-DETR) sẵn sàng kiểm soát {len(active_classes)}/{total_req} nhãn dự án ({coverage}% độ phủ)."
+    ]
+    if unsupported_classes:
+        summary_parts.append(
+            f"Phát hiện {len(unsupported_classes)} nhãn điểm mù ({', '.join(unsupported_classes[:5])}) nằm ngoài năng lực model -> Chuyển sang kiểm tra Luật vật lý và Reviewer thủ công."
+        )
+    summary_parts.append(
+        f"Hệ thống đã tự động lọc bỏ {len(excluded_model_classes)} nhãn ngoài phạm vi guideline khỏi kết quả phát hiện."
+    )
+
+    return {
+        "status": "aligned",
+        "engine": "gemini_heuristic",
+        "active_classes": active_classes,
+        "unsupported_guideline_classes": unsupported_classes,
+        "excluded_model_classes": excluded_model_classes[:40],
+        "model_coverage_percent": coverage,
+        "summary": " ".join(summary_parts)
+    }
+
+
+_TAXONOMY_CACHE = {}
+
+
+def align_taxonomy_with_gemini(guideline_text: str, dataset_classes: list[str], supported_classes=None) -> dict:
+    """Capability coverage is evidence-based; Gemini compiles policy, not model readiness."""
+    requested = sorted({str(c).strip() for c in dataset_classes if str(c).strip()})
+    if supported_classes is None:
+        return {"status": "unverified", "engine": "provider_metadata", "active_classes": [],
+                "unsupported_guideline_classes": [], "excluded_model_classes": [],
+                "unverified_classes": requested, "model_coverage_percent": None,
+                "summary": "Chưa có metadata xác minh khả năng model. Không kết luận lớp không hỗ trợ hay độ phủ khi chưa có bằng chứng."}
+    supported = set(supported_classes)
+    active = sorted(set(requested) & supported)
+    return {"status": "verified", "engine": "provider_metadata", "active_classes": active,
+            "unsupported_guideline_classes": sorted(set(requested) - supported),
+            "excluded_model_classes": sorted(supported - set(requested)),
+            "model_coverage_percent": round(100 * len(active) / len(requested), 1) if requested else None,
+            "summary": f"Metadata model hỗ trợ {len(active)}/{len(requested)} lớp dự án. Lớp ngoài khả năng không bị coi là lỗi nhãn."}
+
+
 def _crop_patch(image_data: bytes, box: list[float] | None) -> tuple[bytes, str]:
     if not box or len(box) < 4:
         mime = "image/png" if image_data.startswith(b"\x89PNG") else "image/jpeg"
@@ -368,6 +482,36 @@ def _crop_patch(image_data: bytes, box: list[float] | None) -> tuple[bytes, str]
     return image_data, mime
 
 
+def _unresolved_dispute(reason: str) -> dict:
+    return {
+        "is_violation": False, "verdict": "UNRESOLVED_DISPUTE",
+        "confirmed_class": None, "confidence": None,
+        "explanation": reason, "action": "Cần reviewer phân xử.",
+        "requires_review": True,
+    }
+
+
+def _validate_arbitration(data: dict, actual_model: str) -> dict:
+    verdicts = {"ANNOTATOR_CORRECT": False, "MODEL_CONFIRMED_ERROR": True, "OBJECT_MISSED": True}
+    if not isinstance(data, dict):
+        raise ValueError("Arbitration must be an object")
+    verdict = data.get("verdict")
+    if verdict == "UNRESOLVED_DISPUTE":
+        return {**_unresolved_dispute("Gemini chưa đủ bằng chứng để phân xử."), "model": actual_model}
+    if not isinstance(verdict, str) or verdict not in verdicts:
+        raise ValueError("Unknown arbitration verdict")
+    if type(data.get("is_violation")) is not bool or data["is_violation"] != verdicts[verdict]:
+        raise ValueError("Inconsistent arbitration verdict")
+    confidence = data.get("confidence")
+    if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+        raise ValueError("Invalid confidence")
+    for field in ("confirmed_class", "explanation", "action"):
+        if not isinstance(data.get(field), str) or not data[field].strip():
+            raise ValueError(f"Missing {field}")
+    return {**{field: data[field] for field in ("is_violation", "verdict", "confirmed_class", "confidence", "explanation", "action")},
+            "model": actual_model, "requires_review": False}
+
+
 def arbitrate_dispute(
     image_data: bytes,
     object_info: dict,
@@ -390,43 +534,39 @@ def arbitrate_dispute(
     """
     key = _api_key()
     annotator_cat = object_info.get("category", object_info.get("label", "unknown"))
+    annotation_description = "Chưa có nhãn người dùng cho ứng viên này" if object_info.get("annotation_missing") else f"Nhãn Annotator: {annotator_cat}"
     box = object_info.get("box", object_info.get("suggested_box", []))
 
-    a_name = (model_a_info or {}).get("model", "YOLO26")
+    a_name = (model_a_info or {}).get("model", "Model 1")
     a_cat = (model_a_info or {}).get("category", (model_a_info or {}).get("label", "none"))
-    a_conf = int(float((model_a_info or {}).get("confidence", 0)) * 100)
-    a_verdict = f"{a_name}: nhận diện '{a_cat}' ({a_conf}%)" if model_a_info else f"{a_name}: không bắt lỗi"
+    a_verdict = f"{a_name}: {json.dumps(model_a_info, ensure_ascii=False)}" if model_a_info else f"{a_name}: không có detection đối ứng; chưa đủ bằng chứng kết luận"
 
-    b_name = (model_b_info or {}).get("model", "DINOv3")
+    b_name = (model_b_info or {}).get("model", "Model 2")
     b_cat = (model_b_info or {}).get("category", (model_b_info or {}).get("label", "none"))
-    b_conf = int(float((model_b_info or {}).get("confidence", 0)) * 100)
-    b_verdict = f"{b_name}: nhận diện '{b_cat}' ({b_conf}%)" if model_b_info else f"{b_name}: không bắt lỗi"
+    b_verdict = f"{b_name}: {json.dumps(model_b_info, ensure_ascii=False)}" if model_b_info else f"{b_name}: không có detection đối ứng; chưa đủ bằng chứng kết luận"
 
     if not key:
-        fallback_cat = annotator_cat if annotator_cat != "unknown" else (a_cat if a_cat != "none" else b_cat)
-        return {
-            "is_violation": True,
-            "verdict": "UNRESOLVED_DISPUTE",
-            "confirmed_class": fallback_cat,
-            "explanation": f"Bất đồng giữa {a_name} và {b_name} (chưa có Gemini API phân xử).",
-            "action": "Người đánh giá kiểm tra thủ công.",
-            "confidence": 0.5
-        }
+        return _unresolved_dispute("Chưa cấu hình Gemini để phân xử bất đồng.")
+    if not image_data:
+        return _unresolved_dispute("Thiếu ảnh để phân xử bất đồng.")
+    if not guideline.strip():
+        return _unresolved_dispute("Chưa có guideline áp dụng để phân xử.")
 
     patch_bytes, mime = _crop_patch(image_data, box) if image_data else (b"", "image/jpeg")
 
     prompt = (
         "Bạn là TRỌNG TÀI QUY CÁCH VLM (Gemini Arbiter) chuyên giải quyết TRANH CHẤP GÁN NHÃN 2D.\n"
-        "Tình huống: Có sự bất đồng ý kiến giữa 2 model AI (YOLO26 và DINOv3) hoặc giữa Model và Annotator.\n\n"
+        "Tình huống: Có bất đồng giữa các kết quả nhận diện hoặc với Annotator. Thiếu detection không chứng minh nhãn sai.\n\n"
         f"THÔNG TIN ĐỐI TƯỢNG:\n"
-        f"- Nhãn Annotator gán: '{annotator_cat}' (Tọa độ: {box})\n"
+        f"- {annotation_description} (Tọa độ ứng viên: {box})\n"
         f"- Model 1 ({a_name}): {a_verdict}\n"
         f"- Model 2 ({b_name}): {b_verdict}\n"
-        f"- Quy chuẩn Guideline: {guideline[:1000] if guideline else 'Quy chuẩn BDD100K 2D tiêu chuẩn'}\n\n"
+        f"- Quy chuẩn Guideline (chỉ dùng nội dung này): {guideline}\n\n"
         "YÊU CẦU TRỌNG TÀI:\n"
         "1. Quan sát vùng ảnh được cung cấp.\n"
         "2. Đưa ra phán quyết công tâm:\n"
-        "   - Nếu Annotator GÁN ĐÚNG: is_violation = false, verdict = 'ANNOTATOR_CORRECT', confirmed_class = '{annotator_cat}'.\n"
+        f"   - Nếu Annotator GÁN ĐÚNG: is_violation = false, verdict = 'ANNOTATOR_CORRECT', confirmed_class = '{annotator_cat}'.\n"
+        "   - Nếu thiếu bằng chứng: is_violation = false, verdict = 'UNRESOLVED_DISPUTE'. Không suy đoán kết luận.\n"
         "   - Nếu Annotator GÁN SAI (ví dụ gán nhầm loại xe/người, gán thừa): is_violation = true, verdict = 'MODEL_CONFIRMED_ERROR', chỉ rõ confirmed_class đúng.\n"
         "   - Nếu đây là vật thể rõ ràng bị Annotator BỎ SÓT: is_violation = true, verdict = 'OBJECT_MISSED', chỉ rõ confirmed_class đúng.\n"
         "3. Explanation và action phải CỰC KỲ NGẮN GỌN (tối đa 1 câu súc tích mỗi mục)."
@@ -454,7 +594,7 @@ def arbitrate_dispute(
     }
 
     primary_model = model_name()
-    candidate_models = [primary_model, "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"]
+    candidate_models = [primary_model]
     models_to_try = [m for m in candidate_models if m]
 
     for current_m in models_to_try:
@@ -467,25 +607,10 @@ def arbitrate_dispute(
                 result = json.loads(response.read().decode("utf-8"))
             text = "".join(p.get("text", "") for p in result.get("candidates", [{}])[0].get("content", {}).get("parts", []))
             data = json.loads(text)
-            return {
-                "is_violation": bool(data.get("is_violation", False)),
-                "verdict": str(data.get("verdict", "ARBITRATED")),
-                "confirmed_class": str(data.get("confirmed_class", annotator_cat)),
-                "explanation": str(data.get("explanation", ""))[:300],
-                "action": str(data.get("action", ""))[:200],
-                "confidence": float(data.get("confidence", 0.9))
-            }
+            return _validate_arbitration(data, current_m)
         except Exception:
             continue
 
-    # Fallback if API call failed
-    return {
-        "is_violation": True,
-        "verdict": "MODEL_CONFIRMED_ERROR",
-        "confirmed_class": a_cat if a_cat != "none" else (b_cat if b_cat != "none" else annotator_cat),
-        "explanation": f"Trọng tài: Bất đồng giữa {a_name} và {b_name} cần reviewer kiểm tra.",
-        "action": "Xem lại hình ảnh và đối chiếu quy chuẩn.",
-        "confidence": 0.7
-    }
+    return _unresolved_dispute("Gemini không trả về phán quyết hợp lệ; bất đồng chưa được giải quyết.")
 
 

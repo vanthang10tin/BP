@@ -36,6 +36,21 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 
+# Tự động nạp cấu hình từ .env nếu có
+for _env_path in [os.path.join(CURRENT_DIR, ".env"), os.path.join(os.path.dirname(CURRENT_DIR), ".env")]:
+    if os.path.exists(_env_path):
+        try:
+            with open(_env_path, "r", encoding="utf-8") as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if _line and not _line.startswith("#") and "=" in _line:
+                        _k, _v = _line.split("=", 1)
+                        _k, _v = _k.strip(), _v.strip().strip("'\"")
+                        if _k and _k not in os.environ:
+                            os.environ[_k] = _v
+        except Exception:
+            pass
+
 from qc_engine import BDDQualityChecker, DEFAULT_CONFIG
 from ai_engine.guideline_manager import global_guideline_manager
 from ai_engine.guideline_manager import GuidelineManager
@@ -366,18 +381,21 @@ try:
         profile.setdefault("task_type", task)
         if profile["task_type"] != task:
             raise HTTPException(status_code=409, detail="Workspace task_type does not match the current run")
-        guideline_text, guideline_version = "", None
+        guideline_text, guideline_version = None, None
         if workspace:
             active = workspace.get("active_guideline")
             if active:
                 guideline_text, guideline_version = active["text"], active["version"]
-            profile["guideline_status"] = active["status"] if active else "not_configured"
+                profile["guideline_status"] = active["status"]
+            else:
+                profile["guideline_status"] = "system_default"
         elif payload.get("guideline"):
             guideline_text = str(payload["guideline"])
             profile["guideline_status"] = "request_draft"
         else:
-            profile["guideline_status"] = "not_configured"
+            profile["guideline_status"] = "system_default"
         guideline_manager = GuidelineManager(guideline_text)
+        profile["use_gemini"] = payload.get("use_gemini") is True
         images, masks = payload.get("images", {}), payload.get("masks", {})
         try:
             if task == "bbox":
@@ -399,7 +417,7 @@ try:
         result["guideline_status"] = profile.get("guideline_status", "not_configured")
         result["compiled_rules"] = guideline_manager.get_compiled_rules()
         # Cloud vision is strictly opt-in; the local pipeline runs first and remains the source of truth.
-        if payload.get("use_gemini") is True:
+        if payload.get("use_gemini") is True and payload.get("gemini_discovery") is True:
             if not gemini_configured():
                 raise HTTPException(status_code=400, detail="Gemini API key is not configured. Add GEMINI_API_KEY to the backend .env file or environment variables.")
             limit = max(1, min(50, int(payload.get("gemini_frame_limit", 10))))
@@ -523,7 +541,7 @@ try:
         return get_default_or_saved_config()
 
     @fastapi_app.get("/api/guideline")
-    async def get_guideline(request: Request):
+    def get_guideline(request: Request):
         workspace_id = request.query_params.get("workspace_id")
         if workspace_id:
             workspace = get_workspace(workspace_id)
@@ -531,10 +549,11 @@ try:
                 raise HTTPException(status_code=404, detail="Workspace not found")
             versions = workspace.get("guidelines", [])
             active = workspace.get("active_guideline")
-            manager = GuidelineManager(active["text"] if active else "")
+            g_text = active["text"] if active else None
+            manager = GuidelineManager(g_text)
             return {"workspace_id": workspace_id, "raw_text": manager.get_guideline_text(), "rules": manager.rules,
                     "compiled_rules": manager.get_compiled_rules(),
-                    "active_version": active["version"] if active else None, "active_status": active["status"] if active else "not_configured",
+                    "active_version": active["version"] if active else None, "active_status": active["status"] if active else "system_default",
                     "versions": [{k: v for k, v in row.items() if k != "text"} for row in versions]}
         articles_dict = {r["id"]: {"title": r["section"], "rule": r["content"]} for r in global_guideline_manager.rules}
         return {
@@ -546,8 +565,41 @@ try:
             }
         }
 
+    @fastapi_app.get("/api/guideline/default")
+    def get_default_guideline_route():
+        from ai_engine.guideline_manager import DEFAULT_GUIDELINES
+        mgr = GuidelineManager(DEFAULT_GUIDELINES)
+        return {
+            "status": "success",
+            "raw_text": DEFAULT_GUIDELINES,
+            "guideline_text": DEFAULT_GUIDELINES,
+            "rules": mgr.rules,
+            "compiled_rules": mgr.get_compiled_rules()
+        }
+
+    @fastapi_app.post("/api/guideline/align-taxonomy")
+    async def align_taxonomy_route(request: Request):
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        guideline_text = payload.get("guideline_text", "")
+        if not guideline_text and payload.get("workspace_id"):
+            ws = get_workspace(payload["workspace_id"])
+            if ws and ws.get("active_guideline"):
+                guideline_text = ws["active_guideline"]["text"]
+        if not guideline_text:
+            guideline_text = global_guideline_manager.get_guideline_text()
+        dataset_classes = payload.get("dataset_classes", [])
+        from gemini_provider import align_taxonomy_with_gemini
+        alignment = await run_in_threadpool(align_taxonomy_with_gemini, guideline_text, dataset_classes)
+        return {
+            "status": "success",
+            "alignment": alignment
+        }
+
     @fastapi_app.get("/api/guideline/compiled")
-    async def get_compiled_guideline():
+    def get_compiled_guideline():
         return {
             "status": "success",
             "compiled_rules": global_guideline_manager.get_compiled_rules()
@@ -562,7 +614,7 @@ try:
         new_text = payload.get("guideline_text", "")
         if new_text:
             global_guideline_manager.update_guideline(new_text)
-        compiled = global_guideline_manager.get_compiled_rules(force_recompile=True)
+        compiled = await run_in_threadpool(global_guideline_manager.get_compiled_rules, force_recompile=True)
         return {
             "status": "success",
             "message": "Đã biên dịch Guideline thành bộ quy tắc máy hiểu (Machine-executable Rules)!",
@@ -581,14 +633,14 @@ try:
                 mgr = GuidelineManager(str(new_text))
                 return {"status": "success", "workspace_id": workspace_id, "version": item["version"],
                         "sha256": item["sha256"], "guideline_status": item["status"],
-                        "compiled_rules": mgr.get_compiled_rules(force_recompile=True)}
+                        "compiled_rules": await run_in_threadpool(mgr.get_compiled_rules, force_recompile=True)}
             except KeyError:
                 raise HTTPException(status_code=404, detail="Workspace not found")
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
         if new_text:
             global_guideline_manager.update_guideline(new_text)
-        compiled = global_guideline_manager.get_compiled_rules(force_recompile=True)
+        compiled = await run_in_threadpool(global_guideline_manager.get_compiled_rules, force_recompile=True)
         return {
             "status": "success",
             "message": "Đã cập nhật và biên dịch Guideline thành công!",
@@ -1036,7 +1088,8 @@ try:
             frame_name = str(frame.get("frame_name", "frame"))
             needs_push = any(
                 issue.get("review_status") not in {"rejected", "dismissed"}
-                and (include_all or issue.get("review_status", "pending") == "confirmed")
+                and (include_all or issue.get("review_status", "pending") == "confirmed"
+                     or (issue.get("review_status") == "resolved" and issue.get("cvat_issue_id")))
                 for issue in frame.get("errors", [])
             )
             if frame_map:
@@ -1063,7 +1116,7 @@ try:
                 rev_status = issue.get("review_status", "pending")
                 if rev_status in {"rejected", "dismissed"}:
                     continue
-                if not include_all and rev_status != "confirmed":
+                if not include_all and rev_status != "confirmed" and not (rev_status == "resolved" and issue.get("cvat_issue_id")):
                     skipped_unreviewed += 1
                     continue
                 eligible_count += 1

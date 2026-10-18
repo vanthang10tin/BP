@@ -137,6 +137,14 @@ class LocalYOLO26Detector:
 
     def detect_frame(self, frame_name: str, image_bytes: Optional[bytes] = None, conf_threshold: float = 0.35) -> List[Dict[str, Any]]:
         """Chạy inference YOLO26 thật trên ảnh nếu có ảnh cục bộ hoặc image_bytes."""
+        try:
+            from .local_model_providers import _modal_base_url
+            if _modal_base_url():
+                # In cloud-hosted pipeline, ensemble detection is handled in parallel by Modal Cloud
+                return []
+        except Exception:
+            pass
+
         if not image_bytes:
             from coordinate_utils import find_image_path
             path = find_image_path(frame_name)
@@ -189,6 +197,7 @@ class MultiModelQCEngine:
         }
         if config:
             cfg.update(config)
+        allowed_classes = set(cfg.get("allowed_classes", BDD100K_STANDARD_CLASSES))
 
         evaluated_frames = []
         total_objects = 0
@@ -207,6 +216,8 @@ class MultiModelQCEngine:
         rule_telemetry = {}
 
         for frame_idx, frame in enumerate(dataset):
+            image_width = frame.get("width", cfg["image_width"])
+            image_height = frame.get("height", cfg["image_height"])
             frame_name = frame.get("name", f"frame_{frame_idx:04d}.jpg")
             labels = frame.get("labels", [])
             total_objects += len(labels)
@@ -224,9 +235,9 @@ class MultiModelQCEngine:
                 b = label.get("box2d")
 
                 # 1.1 Kiểm tra BDD100K Ontology Class chuẩn (Slide 30)
-                canonical_cat = BDD100K_CLASS_ALIASES.get(cat, cat)
+                canonical_cat = cat if cat in allowed_classes else BDD100K_CLASS_ALIASES.get(cat, cat)
                 is_semantic_region = cat in BDD100K_POLYGON_CLASSES and not b
-                if canonical_cat not in BDD100K_STANDARD_CLASSES and not is_semantic_region:
+                if canonical_cat not in allowed_classes and not is_semantic_region:
                     cit = self.guideline_manager.format_citation("class", cat)
                     err = {
                         "object_id": lbl_id,
@@ -236,7 +247,7 @@ class MultiModelQCEngine:
                         "qa_layer": "Tầng 1 (Luật)",
                         "component": "Ontology Class",
                         "models_flagged": ["Rule-Engine", "BDD-Ontology"],
-                        "explanation": f"Class '{cat}' nằm ngoài danh mục 10 lớp chuẩn BDD100K. {cit}",
+                        "explanation": f"Class '{cat}' nằm ngoài danh mục của dự án. {cit}",
                         "action": "Đổi sang class hợp lệ trong ontology",
                         "auto_healable": False
                     }
@@ -277,7 +288,7 @@ class MultiModelQCEngine:
                     rule_telemetry["BOX_INVERTED"] = rule_telemetry.get("BOX_INVERTED", 0) + 1
 
                 # 1.3 Box tràn ngoài ảnh 1280x720
-                elif x1 < 0 or y1 < 0 or x2 > cfg["image_width"] or y2 > cfg["image_height"]:
+                elif x1 < 0 or y1 < 0 or x2 > image_width or y2 > image_height:
                     cit = self.guideline_manager.format_citation("out_of_image")
                     err = {
                         "object_id": lbl_id,
@@ -321,7 +332,7 @@ class MultiModelQCEngine:
 
                     # 1.5 Kiểm tra tỉ lệ khung vô lý theo class (Slide 30: Aspect ratio check)
                     aspect_ratio = w / max(0.1, h)
-                    ar_range = CLASS_ASPECT_RATIO_RANGES.get(canonical_cat)
+                    ar_range = CLASS_ASPECT_RATIO_RANGES.get(canonical_cat) if cfg.get("enable_aspect_heuristic", True) else None
                     if ar_range and (aspect_ratio < ar_range[0] or aspect_ratio > ar_range[1]):
                         err = {
                             "object_id": lbl_id,
@@ -340,8 +351,8 @@ class MultiModelQCEngine:
                         rule_telemetry["BOX_UNREASONABLE_ASPECT_RATIO"] = rule_telemetry.get("BOX_UNREASONABLE_ASPECT_RATIO", 0) + 1
 
                     # 1.6 Kiểm tra sát mép ảnh mà quên đánh dấu truncated (Slide 30)
-                    near_border = (x1 <= 2.0 or y1 <= 2.0 or x2 >= (cfg["image_width"] - 2.0) or y2 >= (cfg["image_height"] - 2.0))
-                    if near_border and not attrs.get("truncated", False):
+                    near_border = (x1 <= 2.0 or y1 <= 2.0 or x2 >= (image_width - 2.0) or y2 >= (image_height - 2.0))
+                    if cfg.get("require_truncated", True) and near_border and not attrs.get("truncated", False):
                         err = {
                             "object_id": lbl_id,
                             "category": cat,
@@ -478,7 +489,7 @@ class MultiModelQCEngine:
                 frame_name,
                 frame.get("image_bytes"),
                 conf_threshold=float(cfg.get("model_threshold", 0.35))
-            )
+            ) if cfg.get("enable_model_checks", True) else []
 
             if model_preds:
                 gt_labeled = []

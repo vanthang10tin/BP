@@ -301,6 +301,16 @@
     white-space: nowrap;
 }
 
+.model-polygon-overlay {
+    fill: rgba(168, 85, 247, 0.28);
+    stroke: #a855f7;
+    stroke-width: 2;
+    stroke-dasharray: 4 2;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+    transition: fill 0.2s, stroke 0.2s;
+}
+
 /* QC Issue: ĐỎ (Red / Coral) */
 .issue-box {
     fill: rgba(239, 68, 68, 0.15);

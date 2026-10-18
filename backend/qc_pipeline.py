@@ -13,11 +13,20 @@ from PIL import Image
 from ai_engine.local_model_providers import infer_bbox, infer_segmentation, ProviderError
 from coordinate_utils import bdd_to_xyxy
 from ai_engine.models_ensemble import compute_iou
-from gemini_provider import arbitrate_dispute, configured as gemini_configured
+from gemini_provider import arbitrate_dispute, _unresolved_dispute, configured as gemini_configured
 
 
 def _normal(value: Any) -> str:
     return " ".join(str(value or "").strip().lower().replace("_", " ").split())
+
+
+def _unresolved_finding(name, object_id, category, box, verdict):
+    return {"issue_id": f"{name}:{object_id}:UNRESOLVED_DISPUTE", "object_id": object_id,
+            "category": category, "severity": "MEDIUM", "error_type": "UNRESOLVED_DISPUTE",
+            "qa_layer": "Cần phân xử", "component": "Trọng tài", "model_name": verdict.get("model", ""),
+            "models_flagged": [], "explanation": verdict.get("explanation", "Bất đồng chưa được phân xử."),
+            "action": "Cần reviewer kiểm tra.", "suggested_box": box, "review_status": "pending",
+            "auto_healable": False, "requires_review": True, "model_confidence": None}
 
 
 def _ontology(profile: dict[str, Any], fallback: list[str] | None = None) -> tuple[list[str], dict[str, str]]:
@@ -183,28 +192,39 @@ def _rank(frame: dict[str, Any]) -> None:
 
 
 def _base_bbox_frames(frames: list[dict[str, Any]], profile: dict[str, Any], guideline_manager: Any) -> list[dict[str, Any]]:
-    is_bdd = profile.get("annotation_format", "bdd100k") == "bdd100k" and profile.get("dataset", "bdd100k").lower() == "bdd100k"
-    if is_bdd:
-        from qc_engine import BDDQualityChecker
-        results = BDDQualityChecker(guideline_manager=guideline_manager).check_dataset_advanced(frames)["sorted_frames"]
+    # Layer 1: Luôn chạy bộ kiểm tra luật hình học & vật lý chuẩn quốc tế (BDDQualityChecker)
+    from qc_engine import BDDQualityChecker
+    try:
+        compiled = guideline_manager.get_compiled_rules() if guideline_manager else {}
+        geometry = compiled.get("geometry_constraints", {})
+        classes, _ = _ontology(profile, sorted({l.get("category", "") for f in frames for l in f.get("labels", [])}))
+        config = {"enable_model_checks": False, "enable_aspect_heuristic": False,
+                  "allowed_classes": [c.lower() for c in classes]}
+        if guideline_manager and not guideline_manager.is_default:
+            config.update(min_box_width=geometry.get("min_box_pixels") or 0,
+                          min_box_height=geometry.get("min_box_pixels") or 0,
+                          min_box_area=geometry.get("min_area_pixels") or 0,
+                          mandatory_attributes=[], require_truncated=False,
+                          duplicate_box_iou_threshold=float("inf"),
+                          mask_box_min_iou=0, max_mask_box_drift_px=float("inf"))
+        results = BDDQualityChecker(config, guideline_manager=guideline_manager).check_dataset_advanced(frames)["sorted_frames"]
         for output in results:
             source = frames[output["frame_index"]]
             output["width"] = int(source.get("width", profile.get("image_width", 1280)))
             output["height"] = int(source.get("height", profile.get("image_height", 720)))
         return results
-    out = []
-    for index, source in enumerate(frames):
-        labels = source.get("labels", [])
-        out.append({"frame_name": source["name"], "frame_index": index, "priority_rank": 4,
-                    "priority_label": "NO FLAGS FROM ENABLED CHECKS", "recommendation": "No findings from enabled checks; not a verified pass",
-                    "error_count": 0, "errors": [], "labels": labels,
-                    "width": int(source.get("width", profile.get("image_width", 0))),
-                    "height": int(source.get("height", profile.get("image_height", 0)))})
-    return out
+    except Exception as exc:
+        raise ValueError("Rule evaluation failed; no verified QC result was produced") from exc
+
 
 
 def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any], guideline_manager: Any,
                       threshold: float = 0.35, match_iou: float = 0.5) -> dict[str, Any]:
+    def arbitrate(*args, **kwargs):
+        if profile.get("use_gemini") is not True:
+            return _unresolved_dispute("Gemini chưa được bật cho lần chạy này.")
+        return arbitrate_dispute(*args, **kwargs)
+
     profile = {"annotation_format": "bdd100k", "dataset": "bdd100k", **profile}
     frames = normalize_bbox_dataset(data, profile["annotation_format"], profile)
     if not frames:
@@ -220,12 +240,30 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
             if target in class_names and _normal(raw_alias) not in aliases:
                 aliases[_normal(raw_alias)] = target
         class_thresh_map = compiled.get("class_thresholds", {})
-        # The 4 px floor is an application fallback, not a guideline citation.
-        min_pixels = compiled.get("geometry_constraints", {}).get("min_box_pixels") or 4
+        min_pixels = compiled.get("geometry_constraints", {}).get("min_box_pixels")
+        min_pixels = 0 if min_pixels is None else min_pixels
     else:
         class_thresh_map = {}
-        min_pixels = 4
+        min_pixels = 0
 
+    guideline_txt = getattr(guideline_manager, "get_guideline_text", lambda: "")() if guideline_manager else ""
+
+    # Đối soát danh mục Taxonomy với Gemini / Heuristic
+    from gemini_provider import align_taxonomy_with_gemini
+    taxonomy_alignment = align_taxonomy_with_gemini(guideline_txt, class_names)
+    active_classes = set(taxonomy_alignment.get("active_classes", class_names))
+    unsupported_classes = set(taxonomy_alignment.get("unsupported_guideline_classes", []))
+    excluded_model_classes = set(taxonomy_alignment.get("excluded_model_classes", []))
+
+    # Tầng 1: Đánh giá các quy chuẩn hình học, biên, và thuộc tính vật lý
+    for frame in frames:
+        image_bytes = _image_bytes(frame["name"], images)
+        if image_bytes:
+            try:
+                with Image.open(io.BytesIO(image_bytes)) as source_image:
+                    frame["width"], frame["height"] = source_image.size
+            except (OSError, ValueError):
+                pass
     evaluated = _base_bbox_frames(frames, profile, guideline_manager)
     source_by_name = {f["name"]: f for f in frames}
     provider_meta = None
@@ -233,10 +271,10 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
     n_model_issues = 0
     min_conf = float(profile.get("model_threshold", threshold))
     preferred_bbox_model = profile.get("preferred_model") or profile.get("model")
-    guideline_txt = getattr(guideline_manager, "get_guideline_text", lambda: "")() if guideline_manager else ""
 
     def _process_bbox_frame(result: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None, int]:
         name = result["frame_name"]
+        frame_unsupported = set(unsupported_classes)
         image_data = _image_bytes(name, images)
         if image_data is None:
             return None, {"frame_name": name, "reason": "image_not_uploaded_or_found_locally"}, 0
@@ -244,6 +282,16 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
             with Image.open(io.BytesIO(image_data)) as im:
                 width, height = im.size
             predictions, p_meta = infer_bbox(image_data, min_conf, class_names, profile.get("model_label_mapping", {}), preferred_model=preferred_bbox_model)
+            runs = p_meta.get("model_runs", [])
+            vocabularies = [set(aliases.get(_normal(c), c) for c in run["supported_classes"])
+                            for run in runs if run.get("status") == "success" and isinstance(run.get("supported_classes"), list)]
+            if vocabularies:
+                # Use capabilities from every successful provider. A single
+                # surviving detector still has a known vocabulary; classes it
+                # cannot predict must not be treated as failed annotations.
+                supported = sorted(set.intersection(*vocabularies))
+                result["taxonomy_alignment"] = align_taxonomy_with_gemini(guideline_txt, class_names, supported)
+                frame_unsupported = set(result["taxonomy_alignment"]["unsupported_guideline_classes"])
         except (ProviderError, OSError, ValueError) as exc:
             return None, {"frame_name": name, "reason": str(exc)[:400]}, 0
 
@@ -271,94 +319,125 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
             target_thresh = class_thresh_map.get(category, min_conf)
             if conf < target_thresh or bw < min_pixels or bh < min_pixels:
                 continue
-            # Bỏ qua nắp ca-pô xe camera (ego vehicle hood) ở đáy khung hình
-            if width >= 100 and height >= 100 and category in {"car", "truck", "bus"} and box[1] >= height * 0.65 and box[3] >= height * 0.92 and bw >= width * 0.6:
+            # Bỏ qua các class bị loại trừ bởi Taxonomy Alignment (model có nhưng guideline/dự án không cần)
+            if category in excluded_model_classes:
                 continue
-            overlaps_gt = any(compute_iou(tuple(box), tuple(obj["box"])) >= 0.30 for obj in gt_objects)
+            overlaps_gt = any(compute_iou(tuple(box), tuple(obj["box"])) >= match_iou for obj in gt_objects)
             if category not in class_names and not overlaps_gt:
                 continue
             m_source = prediction.get("model") or (p_meta.get("name") if p_meta else "local-detector")
             model_boxes.append({"category": category, "model_label": category_raw, "box": box, "confidence": conf,
-                                "model": m_source, "type": "rectangle"})
+                                "model": m_source, "model_role": prediction.get("model_role"), "type": "rectangle"})
 
-        # Tách phát hiện theo bộ đôi YOLO26 và DINOv3
-        yolo_boxes = [m for m in model_boxes if "DINO" not in str(m.get("model", "")).upper()]
-        dino_boxes = [m for m in model_boxes if "DINO" in str(m.get("model", "")).upper()]
-        has_dual = bool(yolo_boxes and dino_boxes)
+        # Separate predictions from YOLO26 and the second detector (D-FINE / DETR).
+        def second_detector(m):
+            return m.get("model_role") == "detector_b" or any(tag in str(m.get("model", "")).upper() for tag in ("DFINE", "D-FINE", "DINO", "RTDETR", "RT-DETR"))
+        yolo_boxes = [m for m in model_boxes if not second_detector(m)]
+        dino_boxes = [m for m in model_boxes if second_detector(m)]
+        model_runs = (p_meta or {}).get("model_runs", [])
+        successful_roles = {r.get("role") for r in model_runs if r.get("status") == "success"}
+        has_dual = {"detector_a", "detector_b"}.issubset(successful_roles) if model_runs else bool(yolo_boxes and dino_boxes)
+        result["model_runs"] = model_runs
 
         findings = []
 
         if has_dual:
             # -------------------------------------------------------------
-            # CƠ CHẾ HỘI ĐỒNG (YOLO26 + DINOv3) & VLM GEMINI TRỌNG TÀI
+            # Cơ chế hội đồng YOLO26 + D-FINE, có Gemini làm trọng tài VLM.
             # -------------------------------------------------------------
             unmatched_yolo = list(range(len(yolo_boxes)))
             unmatched_dino = list(range(len(dino_boxes)))
 
             for obj in gt_objects:
-                # 1. Đánh giá bởi YOLO26
-                y_cls = [(compute_iou(tuple(obj["box"]), tuple(yolo_boxes[j]["box"])), j) for j in unmatched_yolo if yolo_boxes[j]["category"] == obj["category"]]
-                y_best_iou, y_best_idx = max(y_cls, default=(0.0, -1))
-                y_ovl = [(compute_iou(tuple(obj["box"]), tuple(yolo_boxes[j]["box"])), j) for j in unmatched_yolo]
-                y_ovl_iou, y_ovl_idx = max(y_ovl, default=(0.0, -1))
-                y_pass = (y_best_iou >= match_iou)
-                if y_pass and y_best_idx >= 0:
-                    unmatched_yolo.remove(y_best_idx)
+                gt_cat = obj["category"]
 
-                # 2. Đánh giá bởi DINOv3
-                d_cls = [(compute_iou(tuple(obj["box"]), tuple(dino_boxes[j]["box"])), j) for j in unmatched_dino if dino_boxes[j]["category"] == obj["category"]]
-                d_best_iou, d_best_idx = max(d_cls, default=(0.0, -1))
-                d_ovl = [(compute_iou(tuple(obj["box"]), tuple(dino_boxes[j]["box"])), j) for j in unmatched_dino]
-                d_ovl_iou, d_ovl_idx = max(d_ovl, default=(0.0, -1))
-                d_pass = (d_best_iou >= match_iou)
-                if d_pass and d_best_idx >= 0:
-                    unmatched_dino.remove(d_best_idx)
-
-                # Tình huống 1: Cả 2 model cùng xác nhận ĐÚNG -> PASS
-                if y_pass and d_pass:
+                # Nếu nhãn này thuộc điểm mù của model (guideline có nhưng model không phát hiện được):
+                # Không bắt lỗi thiếu đối tượng bằng model
+                if gt_cat in frame_unsupported:
                     continue
 
-                # Tình huống 2: Cả 2 model cùng báo SAI -> HỘI ĐỒNG ĐỒNG THUẬN (Auto Issue)
-                if not y_pass and not d_pass:
-                    y_conflict = (y_ovl_iou >= 0.30 and y_ovl_idx >= 0 and yolo_boxes[y_ovl_idx]["category"] != obj["category"])
-                    d_conflict = (d_ovl_iou >= 0.30 and d_ovl_idx >= 0 and dino_boxes[d_ovl_idx]["category"] != obj["category"])
-                    if y_conflict or d_conflict:
-                        m_cand = yolo_boxes[y_ovl_idx]["category"] if y_conflict else dino_boxes[d_ovl_idx]["category"]
-                        evidence = yolo_boxes[y_ovl_idx]["box"] if y_conflict else dino_boxes[d_ovl_idx]["box"]
+                # 1. Đánh giá bởi YOLO26
+                y_matches = [(compute_iou(tuple(obj["box"]), tuple(yolo_boxes[j]["box"])), j)
+                             for j in unmatched_yolo if yolo_boxes[j]["category"] == gt_cat]
+                y_best_match_iou, y_match_idx = max(y_matches, default=(0.0, -1))
+
+                y_conflicts = [(compute_iou(tuple(obj["box"]), tuple(yolo_boxes[j]["box"])), j)
+                               for j in unmatched_yolo if yolo_boxes[j]["category"] != gt_cat]
+                y_best_conflict_iou, y_conflict_idx = max(y_conflicts, default=(0.0, -1))
+
+                y_is_correct = (y_best_match_iou >= match_iou and y_best_match_iou >= y_best_conflict_iou)
+                y_is_wrong_class = (y_best_conflict_iou >= match_iou and y_best_conflict_iou > y_best_match_iou)
+
+                if y_is_correct and y_match_idx >= 0:
+                    unmatched_yolo.remove(y_match_idx)
+
+                # 2. Evaluate the second detector (RT-DETR).
+                d_matches = [(compute_iou(tuple(obj["box"]), tuple(dino_boxes[j]["box"])), j)
+                             for j in unmatched_dino if dino_boxes[j]["category"] == gt_cat]
+                d_best_match_iou, d_match_idx = max(d_matches, default=(0.0, -1))
+
+                d_conflicts = [(compute_iou(tuple(obj["box"]), tuple(dino_boxes[j]["box"])), j)
+                               for j in unmatched_dino if dino_boxes[j]["category"] != gt_cat]
+                d_best_conflict_iou, d_conflict_idx = max(d_conflicts, default=(0.0, -1))
+
+                d_is_correct = (d_best_match_iou >= match_iou and d_best_match_iou >= d_best_conflict_iou)
+                d_is_wrong_class = (d_best_conflict_iou >= match_iou and d_best_conflict_iou > d_best_match_iou)
+
+                if d_is_correct and d_match_idx >= 0:
+                    unmatched_dino.remove(d_match_idx)
+                if y_is_wrong_class and not y_is_correct:
+                    unmatched_yolo.remove(y_conflict_idx)
+                if d_is_wrong_class and not d_is_correct:
+                    unmatched_dino.remove(d_conflict_idx)
+
+                # TÌNH HUỐNG 1: Người gán nhãn được xác nhận ĐÚNG (model thấy cùng class -> PASS TUYỆT ĐỐI)
+                if y_is_correct and d_is_correct:
+                    continue
+                # TÌNH HUỐNG 2: CẢ 2 MODEL CÙNG CHO RẰNG SAI (HỘI ĐỒNG ĐỒNG THUẬN)
+                same_conflict = (y_is_wrong_class and d_is_wrong_class
+                                 and yolo_boxes[y_conflict_idx]["category"] == dino_boxes[d_conflict_idx]["category"])
+                if not y_is_correct and not d_is_correct and same_conflict:
+                    if y_is_wrong_class or d_is_wrong_class:
+                        use_y = (y_is_wrong_class and (not d_is_wrong_class or y_best_conflict_iou >= d_best_conflict_iou))
+                        cand_box = yolo_boxes[y_conflict_idx] if use_y else dino_boxes[d_conflict_idx]
+                        m_cand = cand_box["category"]
+                        evidence = cand_box["box"]
                         issue_type = "MODEL_CLASS_DISAGREEMENT"
-                        expl = f"Hội đồng: Sai nhãn '{obj['category']}' -> '{m_cand}'."
+                        expl = f"Sai nhãn: '{gt_cat}' → '{m_cand}'."
                         act = f"Đổi nhãn thành '{m_cand}'."
                     else:
                         evidence = obj["box"]
                         issue_type = "ANNOTATION_NOT_CONFIRMED_BY_MODEL"
-                        expl = f"Hội đồng: Không khớp '{obj['category']}' (IoU < {match_iou:.2f})."
-                        act = "Kiểm tra lệch vị trí hoặc thừa."
+                        expl = f"Không tìm thấy đối tượng '{gt_cat}' tại vị trí này."
+                        act = "Kiểm tra gán thừa hoặc lệch vị trí."
 
                     findings.append({
-                        "issue_id": f"{name}:{obj['id']}:{issue_type}", "object_id": obj["id"], "category": obj["category"],
+                        "issue_id": f"{name}:{obj['id']}:{issue_type}", "object_id": obj["id"], "category": gt_cat,
                         "severity": "HIGH" if issue_type == "MODEL_CLASS_DISAGREEMENT" else "MEDIUM",
-                        "error_type": issue_type, "qa_layer": "⚖️ Hội đồng (YOLO26 + DINOv3)",
-                        "component": "YOLO26 + DINOv3", "model_name": "YOLO26x + DINOv3",
-                        "models_flagged": ["YOLO26", "DINOv3"], "explanation": expl,
+                        "error_type": issue_type, "qa_layer": "Hội đồng AI",
+                        "component": "Hội đồng AI", "model_name": "",
+                        "models_flagged": sorted({m["model"] for m in model_boxes}), "explanation": expl,
                         "action": act, "suggested_box": evidence,
                         "review_status": "pending", "auto_healable": False,
-                        "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")(issue_type, obj["category"]) if guideline_manager else ""
+                        "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")(issue_type, gt_cat) if guideline_manager else ""
                     })
 
-                # Tình huống 3: 1 model bảo ĐÚNG, 1 model bảo SAI -> TRANH CHẤP -> VLM GEMINI TRỌNG TÀI
+                # TÌNH HUỐNG 3: TRANH CHẤP (1 MODEL ĐÚNG, 1 MODEL BÁO SAI) -> VLM GEMINI PHÂN XỬ
                 else:
-                    y_info = yolo_boxes[y_ovl_idx] if y_ovl_idx >= 0 else None
-                    d_info = dino_boxes[d_ovl_idx] if d_ovl_idx >= 0 else None
-                    verdict = arbitrate_dispute(image_data, obj, y_info, d_info, guideline=guideline_txt)
-                    if verdict.get("is_violation"):
-                        conf_cls = verdict.get("confirmed_class", obj["category"])
+                    y_info = yolo_boxes[y_conflict_idx if y_is_wrong_class else y_match_idx] if (y_is_wrong_class or y_is_correct) else None
+                    d_info = dino_boxes[d_conflict_idx if d_is_wrong_class else d_match_idx] if (d_is_wrong_class or d_is_correct) else None
+                    verdict = arbitrate(image_data, obj, y_info, d_info, guideline=guideline_txt)
+                    if verdict.get("verdict") == "UNRESOLVED_DISPUTE":
+                        findings.append(_unresolved_finding(name, obj["id"], gt_cat, obj["box"], verdict))
+                    if verdict.get("is_violation") and verdict.get("verdict") != "ANNOTATOR_CORRECT" and verdict.get("verdict") != "UNRESOLVED_DISPUTE":
+                        conf_cls = verdict.get("confirmed_class", gt_cat)
                         findings.append({
                             "issue_id": f"{name}:{obj['id']}:GEMINI_ARBITRATED_DISPUTE", "object_id": obj["id"], "category": conf_cls,
-                            "severity": "HIGH", "error_type": "GEMINI_ARBITRATED_DISPUTE", "qa_layer": "🤖 Trọng tài Gemini",
-                            "component": "Gemini Arbiter", "model_name": "Gemini VLM Arbiter",
-                            "models_flagged": ["Gemini Arbiter", "YOLO26" if not y_pass else "DINOv3"],
-                            "explanation": f"[Gemini] {verdict.get('explanation', '')}",
-                            "action": verdict.get("action", f"Kiểm tra nhãn '{conf_cls}'."),
+                            "severity": "HIGH", "error_type": "GEMINI_ARBITRATED_DISPUTE", "qa_layer": "Trọng tài Gemini",
+                            "component": "Trọng tài Gemini", "model_name": "",
+                            "models_flagged": ["Gemini Arbiter"],
+                            "explanation": verdict.get('explanation', f"Nhãn đúng là '{conf_cls}'."),
+                            "action": verdict.get("action", f"Đổi nhãn thành '{conf_cls}'."),
                             "suggested_box": obj["box"], "review_status": "pending", "auto_healable": False,
                             "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")("class", conf_cls) if guideline_manager else ""
                         })
@@ -372,89 +451,60 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                 d_matches = [(compute_iou(tuple(yb["box"]), tuple(dino_boxes[di]["box"])), di)
                              for di in unmatched_dino if dino_boxes[di]["category"] == yb["category"]]
                 best_iou, best_di = max(d_matches, default=(0.0, -1))
-                if best_iou >= 0.40 and best_di >= 0:
+                if best_iou >= match_iou and best_di >= 0:
                     matched_pairs.add((yi, best_di))
+                    unmatched_dino.remove(best_di)
                     findings.append({
                         "issue_id": f"{name}:unlabeled:{yi}_{best_di}", "object_id": f"DUAL_{yi}", "category": yb["category"],
-                        "severity": "HIGH", "error_type": "POSSIBLE_UNLABELED_OBJECT", "qa_layer": "⚖️ Hội đồng (YOLO26 + DINOv3)",
-                        "component": "YOLO26 + DINOv3", "model_name": "YOLO26x + DINOv3",
-                        "models_flagged": ["YOLO26", "DINOv3"],
-                        "explanation": f"Hội đồng: Bỏ sót '{yb['category']}'.",
+                        "severity": "HIGH", "error_type": "POSSIBLE_UNLABELED_OBJECT", "qa_layer": "Hội đồng AI",
+                        "component": "Hội đồng AI", "model_name": "",
+                        "models_flagged": sorted({m["model"] for m in model_boxes}),
+                        "explanation": f"Bỏ sót đối tượng '{yb['category']}'.",
                         "action": f"Bổ sung nhãn '{yb['category']}'.", "suggested_box": yb["box"],
                         "review_status": "pending", "auto_healable": False,
                         "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")("class", yb["category"]) if guideline_manager else ""
                     })
 
-            # Vật thể chỉ có 1 model phát hiện:
-            # Tối ưu tốc độ: Chỉ lấy candidate có độ tin cậy cao (conf >= 0.55), tối đa 2 candidate / frame
+            # Vật thể chỉ có 1 model phát hiện -> Gemini thẩm định
             dual_y_matched = {p[0] for p in matched_pairs}
             dual_d_matched = {p[1] for p in matched_pairs}
             single_candidates = [yolo_boxes[i] for i in unmatched_yolo if i not in dual_y_matched] + \
                                 [dino_boxes[i] for i in unmatched_dino if i not in dual_d_matched]
-            single_candidates = [c for c in single_candidates if c.get("confidence", 0) >= 0.55 and c["category"] in class_names]
+            single_candidates = [c for c in single_candidates if c["category"] in class_names and c["category"] not in frame_unsupported]
             single_candidates.sort(key=lambda c: -c.get("confidence", 0))
-            single_candidates = single_candidates[:2]
 
             for s_idx, cand in enumerate(single_candidates):
-                arb = arbitrate_dispute(image_data, {"category": cand["category"], "box": cand["box"]},
-                                        model_a_info=cand if "YOLO" in cand.get("model", "") else None,
-                                        model_b_info=cand if "DINO" in cand.get("model", "") else None,
+                arb = arbitrate(image_data, {"category": cand["category"], "box": cand["box"], "annotation_missing": True},
+                                        model_a_info=cand if not second_detector(cand) else None,
+                                        model_b_info=cand if second_detector(cand) else None,
                                         guideline=guideline_txt)
-                if arb.get("is_violation"):
+                if arb.get("verdict") == "UNRESOLVED_DISPUTE":
+                    findings.append(_unresolved_finding(name, f"ARB_{s_idx}", cand["category"], cand["box"], arb))
+                if arb.get("is_violation") and arb.get("verdict") != "UNRESOLVED_DISPUTE":
                     c_cls = arb.get("confirmed_class", cand["category"])
                     findings.append({
                         "issue_id": f"{name}:single_unlabeled:{s_idx}", "object_id": f"ARB_{s_idx}", "category": c_cls,
-                        "severity": "MEDIUM", "error_type": "POSSIBLE_UNLABELED_OBJECT", "qa_layer": "🤖 Trọng tài Gemini",
-                        "component": "Gemini Arbiter", "model_name": "Gemini VLM Arbiter",
-                        "models_flagged": ["Gemini Arbiter", cand.get("model", "Detector")],
-                        "explanation": f"[Gemini] {arb.get('explanation', '')}",
+                        "severity": "MEDIUM", "error_type": "POSSIBLE_UNLABELED_OBJECT", "qa_layer": "Trọng tài Gemini",
+                        "component": "Trọng tài Gemini", "model_name": "",
+                        "models_flagged": ["Gemini Arbiter"],
+                        "explanation": f"Bỏ sót đối tượng '{c_cls}'.",
                         "action": arb.get("action", f"Bổ sung nhãn '{c_cls}'."), "suggested_box": cand["box"],
                         "review_status": "pending", "auto_healable": False,
                         "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")("class", c_cls) if guideline_manager else ""
                     })
 
         else:
-            # Fallback đơn model khi chỉ có 1 model hoạt động
-            unmatched = set(range(len(model_boxes)))
+            # A single detector cannot establish two-model consensus.
+            unresolved = {"explanation": "Thiếu kết quả từ hai model; chưa thể kết luận nhãn đúng/sai."}
             for obj in gt_objects:
-                class_candidates = [(compute_iou(tuple(obj["box"]), tuple(model_boxes[j]["box"])), j) for j in unmatched if model_boxes[j]["category"] == obj["category"]]
-                best_iou, best_idx = max(class_candidates, default=(0.0, -1))
-                overlap_candidates = [(compute_iou(tuple(obj["box"]), tuple(model_boxes[j]["box"])), j) for j in unmatched]
-                overlap_iou, overlap_idx = max(overlap_candidates, default=(0.0, -1))
-                if best_iou >= match_iou:
-                    unmatched.discard(best_idx)
+                if obj["category"] not in frame_unsupported:
+                    findings.append(_unresolved_finding(name, obj["id"], obj["category"], obj["box"], unresolved))
+            for index, pred in enumerate(model_boxes):
+                if pred["category"] not in class_names or pred["category"] in frame_unsupported:
                     continue
-                issue_type = "MODEL_CLASS_DISAGREEMENT" if overlap_iou >= 0.30 and model_boxes[overlap_idx]["category"] != obj["category"] else "ANNOTATION_NOT_CONFIRMED_BY_MODEL"
-                evidence_box = model_boxes[overlap_idx]["box"] if overlap_iou >= 0.30 else obj["box"]
-                rule_cite = getattr(guideline_manager, "format_citation", lambda *a: "")(issue_type, obj["category"]) if guideline_manager else ""
-                if issue_type == "MODEL_CLASS_DISAGREEMENT":
-                    m_cat = model_boxes[overlap_idx]["category"]
-                    m_conf = int(model_boxes[overlap_idx]["confidence"] * 100)
-                    expl = f"Nghi sai nhãn: Người gán '{obj['category']}', AI nhận diện '{m_cat}' ({m_conf}%)."
-                    act = f"Kiểm tra lại xem là '{obj['category']}' hay '{m_cat}'."
-                else:
-                    expl = f"AI không khớp nhãn '{obj['category']}' (IoU<{match_iou:.2f})."
-                    act = "Kiểm tra xem đối tượng có bị gán lệch vị trí hoặc thừa không."
-
-                issue = {"issue_id": f"{name}:{obj['id']}:{issue_type}", "object_id": obj["id"], "category": obj["category"],
-                         "severity": "MEDIUM", "error_type": issue_type, "qa_layer": "Local model candidate",
-                         "component": p_meta["name"] if p_meta else "Detector", "model_name": p_meta["name"] if p_meta else "Detector", "model_confidence": model_boxes[overlap_idx]["confidence"] if overlap_iou >= 0.30 else None,
-                         "models_flagged": [p_meta["name"] if p_meta else "Detector"], "explanation": expl,
-                         "action": act, "suggested_box": evidence_box,
-                         "review_status": "pending", "auto_healable": False, "guideline_rule": rule_cite}
-                findings.append(issue)
-            for j in sorted(unmatched):
-                pred = model_boxes[j]
-                if pred["category"] not in class_names:
+                if any(compute_iou(tuple(pred["box"]), tuple(obj["box"])) >= match_iou for obj in gt_objects):
                     continue
-                pred_cite = getattr(guideline_manager, "format_citation", lambda *a: "")("class", pred["category"]) if guideline_manager else ""
-                conf_pct = int(pred["confidence"] * 100)
-                findings.append({"issue_id": f"{name}:prediction:{j}", "object_id": f"MODEL_{j}", "category": pred["category"],
-                    "severity": "MEDIUM", "error_type": "POSSIBLE_UNLABELED_OBJECT", "qa_layer": "Local model candidate",
-                    "component": p_meta["name"] if p_meta else "Detector", "model_name": p_meta["name"] if p_meta else "Detector", "model_confidence": pred["confidence"],
-                    "models_flagged": [p_meta["name"] if p_meta else "Detector"], "explanation": f"Nghi bỏ sót: AI phát hiện '{pred['category']}' ({conf_pct}%).",
-                    "action": f"Bổ sung nhãn '{pred['category']}' nếu đúng.", "suggested_box": pred["box"], "review_status": "pending",
-                    "auto_healable": False, "guideline_rule": pred_cite})
+                findings.append(_unresolved_finding(name, f"MODEL_{index}", pred["category"], pred["box"], unresolved))
 
         result["model_predictions"] = model_boxes
         result["errors"].extend(findings)
@@ -477,6 +527,7 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
     evaluated.sort(key=lambda f: (f["lqs"], f["priority_rank"], -f["error_count"], f.get("frame_index", 0)))
     return {"status": "success", "task_type": "bbox", "annotation_format": profile["annotation_format"], "guideline_status": profile.get("guideline_status", "not_configured"),
             "models": [provider_meta] if provider_meta else [], "model_issues": n_model_issues, "model_skips": model_skips,
+            "taxonomy_alignment": taxonomy_alignment,
             "summary": {"total_frames": len(evaluated), "total_errors": sum(f["error_count"] for f in evaluated),
                         "mean_lqs": round(sum(f.get("lqs", 100.0) for f in evaluated) / max(1, len(evaluated)), 1),
                         "objectlab_breakdown": {
@@ -529,6 +580,11 @@ def _decode_mask_item(item: dict[str, Any], width: int, height: int):
 
 def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, str], masks: dict[str, str], profile: dict[str, Any],
                               guideline_manager: Any, threshold: float = 0.35, review_iou_threshold: float = 0.5) -> dict[str, Any]:
+    def arbitrate(*args, **kwargs):
+        if profile.get("use_gemini") is not True:
+            return _unresolved_dispute("Gemini chưa được bật cho lần chạy này.")
+        return arbitrate_dispute(*args, **kwargs)
+
     import numpy as np
     if not isinstance(records, list) or not records:
         raise ValueError("Segmentation manifest must be a non-empty array")
@@ -670,9 +726,9 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                         issues.append({
                             "issue_id": f"{name}:mask-class:{mask_id}", "object_id": f"MASK_CLASS_{mask_id}", "category": class_name,
                             "severity": "HIGH", "error_type": "SEGMENTATION_CONSENSUS_ERROR",
-                            "qa_layer": "⚖️ Hội đồng (YOLO26-Seg + SAM2.1)",
-                            "component": "YOLO26-Seg + SAM2.1", "model_name": "YOLO26-Seg + SAM 2.1",
-                            "models_flagged": ["YOLO26-Seg", "SAM2.1"],
+                            "qa_layer": "⚖️ Hội đồng (YOLO26x-Seg + SAM 2.1)",
+                            "component": "YOLO26x-Seg + SAM 2.1", "model_name": "YOLO26x-Seg + SAM 2.1 Large",
+                            "models_flagged": ["YOLO26x-Seg", "SAM 2.1"],
                             "model_confidence": None, "iou": round(min(iou_y, iou_s), 5), "error_pixels": union - intersection,
                             "explanation": f"Hội đồng: Lệch viền mask '{class_name}' (IoU {min(iou_y, iou_s):.2f} < {min_iou:.2f}).",
                             "action": f"Nắn lại biên cho '{class_name}'.", "suggested_box": evidence_box,
@@ -681,17 +737,19 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                         })
                     # Tình huống 2: 1 model đạt, 1 model lỗi -> TRANH CHẤP -> VLM GEMINI TRỌNG TÀI
                     elif (y_fail and not s_fail) or (s_fail and not y_fail):
-                        m_a = {"model": "YOLO26-Seg", "category": class_name, "confidence": iou_y}
-                        m_b = {"model": "SAM2.1", "category": class_name, "confidence": iou_s}
-                        arb = arbitrate_dispute(image_data, {"category": class_name, "suggested_box": evidence_box},
+                        m_a = {"model": "YOLO26x-Seg", "category": class_name, "mask_iou": iou_y}
+                        m_b = {"model": "SAM2.1", "category": class_name, "mask_iou": iou_s}
+                        arb = arbitrate(image_data, {"category": class_name, "suggested_box": evidence_box},
                                                 model_a_info=m_a, model_b_info=m_b, guideline=guideline_txt, task_type="segmentation")
+                        if arb.get("verdict") == "UNRESOLVED_DISPUTE":
+                            issues.append(_unresolved_finding(name, f"MASK_CLASS_{mask_id}", class_name, evidence_box, arb))
                         if arb.get("is_violation"):
                             issues.append({
                                 "issue_id": f"{name}:mask-class:{mask_id}", "object_id": f"MASK_CLASS_{mask_id}", "category": class_name,
                                 "severity": "MEDIUM", "error_type": "SEGMENTATION_MODEL_DISAGREEMENT",
                                 "qa_layer": "🤖 Trọng tài Gemini",
                                 "component": "Gemini Arbiter", "model_name": "Gemini VLM Arbiter",
-                                "models_flagged": ["Gemini Arbiter", "YOLO26-Seg vs SAM2.1"],
+                                "models_flagged": ["Gemini Arbiter", "YOLO26x-Seg vs SAM 2.1"],
                                 "model_confidence": None, "iou": round(iou, 5), "error_pixels": union - intersection,
                                 "explanation": f"[Gemini] {arb.get('explanation', '')}",
                                 "action": arb.get("action", f"Kiểm tra lại biên '{class_name}'."),
@@ -700,16 +758,17 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                             })
 
                 elif iou < min_iou and (class_name in mapped_classes or pred_pixels.any()):
-                    # Fallback đơn model
+                    # An absent/low-overlap prediction is not proof of a bad
+                    # mask. Keep it visible for review, including zero-output
+                    # model runs, instead of returning a clean frame.
                     issues.append({
-                        "issue_id": f"{name}:mask-class:{mask_id}", "object_id": f"MASK_CLASS_{mask_id}", "category": class_name,
-                        "severity": "MEDIUM", "error_type": "SEGMENTATION_MODEL_DISAGREEMENT", "qa_layer": "Local model candidate",
-                        "component": info["name"], "model_name": info["name"], "models_flagged": [info["name"]],
-                        "model_confidence": None, "iou": round(iou, 5), "error_pixels": union - intersection,
-                        "explanation": f"Khớp mask '{class_name}' thấp: IoU={iou:.2f} (< {min_iou:.2f}).",
-                        "action": f"Nắn lại biên cho '{class_name}'.", "suggested_box": evidence_box,
+                        **_unresolved_finding(
+                            name, f"MASK_CLASS_{mask_id}", class_name, evidence_box,
+                            {"explanation": f"Kết quả segmentation không đủ xác nhận mask '{class_name}' (IoU={iou:.2f}, ngưỡng review={min_iou:.2f}); cần reviewer kiểm tra."},
+                        ),
+                        "iou": round(iou, 5), "error_pixels": union - intersection,
                         "review_threshold": min_iou,
-                        "guideline_rule": guideline_manager.format_citation("mask", class_name) if guideline_manager else "", "review_status": "pending", "auto_healable": False
+                        "guideline_rule": guideline_manager.format_citation("mask", class_name) if guideline_manager else "",
                     })
         macro = sum(m["iou"] for m in classes_metrics) / len(classes_metrics) if classes_metrics else None
         rgba = np.zeros((height, width, 4), dtype=np.uint8)
@@ -725,7 +784,7 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                "error_count": len(issues), "errors": issues, "issues": issues, "labels": [], "mask_color": Path(str(row.get("mask_color", ""))).name,
                "classes_present": row.get("classes_present", []), "model_segmentation_metrics": {"macro_iou": round(macro, 5) if macro is not None else None,
                "class_iou": classes_metrics, "classes_model_supported": sorted(mapped_classes), "mask_iou_threshold": min_iou},
-               "model_predictions": [{"label": k, "mask_id": v} for v, k in id_to_class.items() if k in mapped_classes],
+               "model_predictions": model_results if model_results else [{"label": k, "mask_id": v} for v, k in id_to_class.items() if k in mapped_classes],
                "prediction_mask_png_base64": base64.b64encode(png.getvalue()).decode("ascii"),
                "_provider_info": info}
         _rank(out)

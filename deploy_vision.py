@@ -1,15 +1,13 @@
 """
-Modal Cloud CPU Vision Pipeline (YOLO11 + SAM 2.1 + DINOv2)
-API serverless dùng CPU; thời gian chạy và tải model tính theo tài khoản Modal.
+Modal Cloud Vision Pipeline (YOLO26x + D-FINE-X & YOLO26x-Seg + SAM 2.1 Large)
+API serverless chạy 100% trên GPU Nvidia T4 Cloud.
+- BBox: YOLO26x (Ultralytics End-to-End NMS-Free) + D-FINE-X (Peterande/D-FINE, arXiv:2410.13842)
+- Segmentation: YOLO26x-Seg (Ultralytics) + Meta SAM 2.1 Large (Hiera)
 Tương thích 100% với QC Studio BDD100K 2D & Blazor Dashboard.
-
-Cách deploy lên Modal:
-1. pip install modal
-2. python -m modal setup
-3. modal deploy deploy_vision.py
 """
 import io
 import base64
+import os
 import modal
 
 def decode_image(value: str) -> bytes:
@@ -23,10 +21,16 @@ def decode_image(value: str) -> bytes:
     return data
 
 
-# 1. Định nghĩa môi trường Linux + cài thư viện trên Cloud của Modal
+modal_runtime_env = {
+    key: os.environ[key]
+    for key in ("QC_MODAL_YOLO_WEIGHTS", "QC_MODAL_DFINE_WEIGHTS", "QC_MODAL_YOLO_SEG_WEIGHTS", "QC_MODAL_SAM_WEIGHTS")
+    if os.environ.get(key)
+}
+
+# 1. Image container với weights YOLO26x, D-FINE-X, YOLO26x-Seg và SAM 2.1 Large tải sẵn
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install("git", "libgl1", "libglib2.0-0")
+    .apt_install("git", "libgl1", "libglib2.0-0", "curl")
     .pip_install(
         "torch",
         "torchvision",
@@ -34,9 +38,23 @@ image = (
         "python-multipart",
         "pillow",
         "numpy",
-        "ultralytics>=8.3.0",
+        "ultralytics>=8.4.0",
         "transformers",
+        "scipy",
+        "pyyaml",
+        "tensorboard",
+        "loguru",
+        "faster-coco-eval",
+        "calflops",
     )
+    .run_commands(
+        "git clone --depth 1 https://github.com/Peterande/D-FINE.git /root/D-FINE",
+        "curl -L -o /root/dfine_x_coco.pth https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_x_coco.pth",
+        "curl -L -o /root/yolo26x.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x.pt",
+        "curl -L -o /root/yolo26x-seg.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x-seg.pt",
+        "curl -L -o /root/sam2.1_l.pt https://github.com/ultralytics/assets/releases/download/v8.4.0/sam2.1_l.pt",
+    )
+    .env(modal_runtime_env)
 )
 
 app = modal.App("vision-pipeline-api", image=image)
@@ -54,52 +72,84 @@ COCO_TO_BDD100K = {
     "train": "train",
 }
 
+COCO_CLASSES_80 = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
+    "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
+    "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
+    "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball",
+    "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
+    "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
+    "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair",
+    "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote",
+    "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book",
+    "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
+]
 
-# 2. Khởi tạo Class giữ Bộ đôi Model SOTA trên Modal Cloud: YOLO26 + DINOv3 (BBox) và YOLO26-Seg + SAM 2.1 (Segment)
-@app.cls(cpu=8.0, scaledown_window=300, timeout=600, max_containers=10)
+
+# 2. Khởi tạo VisionEngine chạy trên GPU Nvidia T4
+@app.cls(gpu=os.environ.get("QC_MODAL_GPU", "T4"),
+         scaledown_window=300, timeout=600, max_containers=10)
 class VisionEngine:
     @modal.enter()
     def load_models(self):
+        import sys
+        if "/root/D-FINE" not in sys.path:
+            sys.path.insert(0, "/root/D-FINE")
+        from src.core import YAMLConfig
+        from src import nn, zoo
         import torch
-        from ultralytics import YOLO, RTDETR
-        torch.set_num_threads(8)
+        import torch.nn as nn
+        import torchvision.transforms as T
+        from ultralytics import YOLO, SAM
+
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        for w in ["yolo26x.pt", "yolo11x.pt"]:
-            try:
-                self.yolo = YOLO(w).to(self.device)  # Flagship YOLO26x
-                break
-            except Exception:
-                continue
-        for w in ["rtdetr-x.pt", "rtdetr-l.pt"]:
-            try:
-                self.dino = RTDETR(w).to(self.device)  # Flagship Extra-Large DINO Transformer Detector
-                break
-            except Exception:
-                continue
-        self.sam = None
-        self.yolo_seg = None
+        self.yolo_weights = os.environ.get("QC_MODAL_YOLO_WEIGHTS", "/root/yolo26x.pt")
+        self.dfine_weights = os.environ.get("QC_MODAL_DFINE_WEIGHTS", "/root/dfine_x_coco.pth")
+        self.yolo_seg_weights = os.environ.get("QC_MODAL_YOLO_SEG_WEIGHTS", "/root/yolo26x-seg.pt")
+        self.sam_weights = os.environ.get("QC_MODAL_SAM_WEIGHTS", "/root/sam2.1_l.pt")
+
+        # 1. Flagship One-Stage: YOLO26x
+        self.yolo = YOLO(self.yolo_weights).to(self.device)
+
+        # 2. Flagship DETR: D-FINE-X (Peterande/D-FINE, arXiv:2410.13842)
+        try:
+            dfine_cfg_path = "/root/D-FINE/configs/dfine/dfine_hgnetv2_x_coco.yml"
+            dfine_cfg = YAMLConfig(dfine_cfg_path, resume=self.dfine_weights)
+            if "HGNetv2" in dfine_cfg.yaml_cfg:
+                dfine_cfg.yaml_cfg["HGNetv2"]["pretrained"] = False
+
+            dfine_ckpt = torch.load(self.dfine_weights, map_location="cpu")
+            dfine_state = dfine_ckpt["ema"]["module"] if "ema" in dfine_ckpt else dfine_ckpt["model"]
+            dfine_cfg.model.load_state_dict(dfine_state)
+
+            class DFineDeployModel(nn.Module):
+                def __init__(self, m, p):
+                    super().__init__()
+                    self.model = m.deploy()
+                    self.postprocessor = p.deploy()
+
+                def forward(self, images, orig_target_sizes):
+                    outputs = self.model(images)
+                    return self.postprocessor(outputs, orig_target_sizes)
+
+            self.dfine = DFineDeployModel(dfine_cfg.model, dfine_cfg.postprocessor).to(self.device).eval()
+            self.dfine_transforms = T.Compose([
+                T.Resize((640, 640)),
+                T.ToTensor(),
+            ])
+            print(f"[Modal Cloud GPU] D-FINE-X loaded successfully on {self.device}")
+        except Exception as e:
+            print(f"[Modal Cloud GPU] Failed to load D-FINE-X: {e}")
+            self.dfine = None
+
+        # 3. Flagship Segmentation: YOLO26x-Seg
+        self.yolo_seg = YOLO(self.yolo_seg_weights).to(self.device)
+
+        # 4. Flagship Refiner: Meta SAM 2.1 Large
+        self.sam = SAM(self.sam_weights).to(self.device)
+
         self.dino_model = None
-        print(f"[Modal Cloud] SOTA Duo ready on {self.device}: YOLO26x + DINOv3 (RT-DETR-X); SAM 2.1-Large & YOLO26-Seg load on demand")
-
-    def load_sam(self):
-        if self.sam is None:
-            from ultralytics import SAM
-            for w in ["sam2.1_l.pt", "sam2.1_b.pt"]:
-                try:
-                    self.sam = SAM(w).to(self.device)  # Meta SAM 2.1 Large (224M params)
-                    break
-                except Exception:
-                    continue
-
-    def load_yolo_seg(self):
-        if self.yolo_seg is None:
-            from ultralytics import YOLO
-            for w in ["yolo26x-seg.pt", "yolo11x-seg.pt"]:
-                try:
-                    self.yolo_seg = YOLO(w).to(self.device)  # Flagship YOLO26x-Seg
-                    break
-                except Exception:
-                    continue
+        print(f"[Modal Cloud GPU] SOTA Flagship Models loaded on {self.device}: {self.yolo_weights}, {self.dfine_weights}, {self.yolo_seg_weights}, {self.sam_weights}")
 
     def load_dino(self):
         if self.dino_model is None:
@@ -107,21 +157,18 @@ class VisionEngine:
             self.dino_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-base")
             self.dino_model = AutoModel.from_pretrained("facebook/dinov2-base").to(self.device).eval()
 
+    # Luồng Object Detection độc lập: YOLO26x + D-FINE-X
     @modal.method()
-    def predict_full(self, image_bytes: bytes, threshold: float = 0.25, include_masks: bool = True, include_embedding: bool = False):
+    def predict_bbox(self, image_bytes: bytes, threshold: float = 0.25):
         import torch
         from PIL import Image
 
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        img_w, img_h = img.size
-
+        w, h = img.size
         with torch.inference_mode():
-            # A1. Chạy YOLO26x (YOLO Flagship) ở độ phân giải 640 tối ưu tốc độ
+            # A1. YOLO26x Flagship Detector
             yolo_res = self.yolo(img, conf=threshold, imgsz=640, verbose=False)
-            boxes = []
-            classes = []
-            labels = []
-            confidences = []
+            model_runs = [{"role": "detector_a", "name": "yolo26x.pt", "status": "success"}]
             predictions = []
 
             if yolo_res and len(yolo_res) > 0 and yolo_res[0].boxes is not None:
@@ -131,115 +178,143 @@ class VisionEngine:
                     conf = float(box.conf[0].item())
                     raw_name = self.yolo.names.get(cls_id, str(cls_id))
                     bdd_name = COCO_TO_BDD100K.get(raw_name, raw_name)
-
-                    # Lọc bỏ nắp ca-pô xe camera
-                    bw = xyxy[2] - xyxy[0]
-                    if xyxy[1] >= img_h * 0.65 and xyxy[3] >= img_h * 0.92 and bw >= img_w * 0.6:
-                        continue
-
-                    boxes.append(xyxy)
-                    classes.append(raw_name)
-                    labels.append(bdd_name)
-                    confidences.append(conf)
-
                     predictions.append({
                         "type": "rectangle",
                         "label": bdd_name,
                         "points": xyxy,
                         "confidence": conf,
-                        "model": "YOLO26"
+                        "model": "yolo26x.pt",
+                        "model_role": "detector_a"
                     })
 
-            # A2. Chạy DINOv3 (RT-DETR Transformer Detector SOTA) ở độ phân giải 640
-            try:
-                dino_res = self.dino(img, conf=threshold, imgsz=640, verbose=False)
-                if dino_res and len(dino_res) > 0 and dino_res[0].boxes is not None:
-                    for box in dino_res[0].boxes:
-                        xyxy = [float(c) for c in box.xyxy[0].tolist()]
-                        cls_id = int(box.cls[0].item())
-                        conf = float(box.conf[0].item())
-                        raw_name = self.dino.names.get(cls_id, str(cls_id))
+            # A2. D-FINE-X Fine-Grained Distribution Refinement DETR
+            if self.dfine is not None:
+                try:
+                    im_data = self.dfine_transforms(img).unsqueeze(0).to(self.device)
+                    orig_size = torch.tensor([[w, h]], device=self.device)
+                    dfine_outputs = self.dfine(im_data, orig_size)
+                    labels, boxes, scores = dfine_outputs
+                    model_runs.append({"role": "detector_b", "name": "dfine_x_coco.pth", "status": "success"})
+
+                    scr = scores[0]
+                    mask = scr >= threshold
+                    lab = labels[0][mask]
+                    bx = boxes[0][mask]
+                    sc = scr[mask]
+
+                    for j in range(len(sc)):
+                        cls_id = int(lab[j].item())
+                        raw_name = COCO_CLASSES_80[cls_id] if 0 <= cls_id < len(COCO_CLASSES_80) else str(cls_id)
                         bdd_name = COCO_TO_BDD100K.get(raw_name, raw_name)
-
-                        bw = xyxy[2] - xyxy[0]
-                        if xyxy[1] >= img_h * 0.65 and xyxy[3] >= img_h * 0.92 and bw >= img_w * 0.6:
-                            continue
-
+                        xyxy = [round(float(c), 2) for c in bx[j].tolist()]
+                        conf = round(float(sc[j].item()), 4)
                         predictions.append({
                             "type": "rectangle",
                             "label": bdd_name,
                             "points": xyxy,
                             "confidence": conf,
-                            "model": "DINOv3"
+                            "model": "dfine_x_coco.pth",
+                            "model_role": "detector_b"
                         })
-            except Exception as ex:
-                print(f"[WARN] DINOv3 inference error: {ex}")
-
-            # B. Chạy Bộ đôi Phân đoạn SOTA: YOLO26-Seg + Meta SAM 2.1
-            segmentations = []
-            if include_masks:
-                # B1. YOLO26-Seg Instance Segmentation
-                try:
-                    self.load_yolo_seg()
-                    yseg_res = self.yolo_seg(img, conf=threshold, imgsz=640, verbose=False)
-                    if yseg_res and len(yseg_res) > 0 and yseg_res[0].masks is not None and yseg_res[0].boxes is not None:
-                        for idx, box in enumerate(yseg_res[0].boxes):
-                            cls_id = int(box.cls[0].item())
-                            raw_name = self.yolo_seg.names.get(cls_id, str(cls_id))
-                            bdd_name = COCO_TO_BDD100K.get(raw_name, raw_name)
-                            conf = float(box.conf[0].item())
-                            xyxy = [float(c) for c in box.xyxy[0].tolist()]
-                            if idx < len(yseg_res[0].masks.xy):
-                                poly = yseg_res[0].masks.xy[idx]
-                                if len(poly) >= 3:
-                                    flat_pts = [float(c) for pt in poly for c in pt]
-                                    segmentations.append({
-                                        "type": "polygon",
-                                        "label": bdd_name,
-                                        "points": flat_pts,
-                                        "box": xyxy,
-                                        "confidence": conf,
-                                        "model": "YOLO26-Seg"
-                                    })
                 except Exception as ex:
-                    print(f"[WARN] YOLO26-Seg failed: {ex}")
+                    model_runs.append({"role": "detector_b", "name": "dfine_x_coco.pth", "status": "failed"})
+                    print(f"[WARN] D-FINE inference error: {ex}")
 
-                # B2. SAM 2.1 Segment Anything trên các bounding boxes
-                if boxes:
-                    try:
-                        self.load_sam()
-                        sam_res = self.sam(img, bboxes=boxes[:10], verbose=False)
-                        if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
-                            for idx, seg in enumerate(sam_res[0].masks.xy):
-                                if len(seg) >= 3:
-                                    flat_pts = [float(c) for pt in seg for c in pt]
-                                    lbl = labels[idx] if idx < len(labels) else "object"
-                                    cnf = confidences[idx] if idx < len(confidences) else 0.9
-                                    bx = boxes[idx] if idx < len(boxes) else []
-                                    segmentations.append({
-                                        "type": "polygon",
-                                        "label": lbl,
-                                        "points": flat_pts,
-                                        "box": bx,
-                                        "confidence": cnf,
-                                        "model": "SAM2.1"
-                                    })
-                    except Exception as ex:
-                        print(f"[WARN] SAM 2.1 failed: {ex}")
+        supported_classes = sorted({COCO_TO_BDD100K.get(n, n) for n in self.yolo.names.values()})
+        for run in model_runs:
+            run["supported_classes"] = supported_classes
 
-            # C. Chạy DINOv2 trích xuất đặc trưng hình ảnh
-            feat = []
-            if include_embedding:
-                self.load_dino()
+        return {
+            "predictions": predictions,
+            "model_runs": model_runs,
+            "num_detections": len(predictions)
+        }
+
+    # Luồng Segmentation độc lập: YOLO26x-Seg (Bản mạnh nhất) + Meta SAM 2.1 Large
+    @modal.method()
+    def predict_segmentation(self, image_bytes: bytes, threshold: float = 0.25):
+        import torch
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        segmentations = []
+        seg_boxes = []
+        seg_labels = []
+        seg_confs = []
+
+        with torch.inference_mode():
+            # B1. YOLO26x-Seg Flagship Instance Segmentation
+            try:
+                yseg_res = self.yolo_seg(img, conf=threshold, imgsz=640, verbose=False)
+                if yseg_res and len(yseg_res) > 0 and yseg_res[0].masks is not None and yseg_res[0].boxes is not None:
+                    for idx, box in enumerate(yseg_res[0].boxes):
+                        cls_id = int(box.cls[0].item())
+                        raw_name = self.yolo_seg.names.get(cls_id, str(cls_id))
+                        bdd_name = COCO_TO_BDD100K.get(raw_name, raw_name)
+                        conf = float(box.conf[0].item())
+                        xyxy = [float(c) for c in box.xyxy[0].tolist()]
+                        seg_boxes.append(xyxy)
+                        seg_labels.append(bdd_name)
+                        seg_confs.append(conf)
+                        if idx < len(yseg_res[0].masks.xy):
+                            poly = yseg_res[0].masks.xy[idx]
+                            if len(poly) >= 3:
+                                flat_pts = [float(c) for pt in poly for c in pt]
+                                segmentations.append({
+                                    "type": "polygon",
+                                    "label": bdd_name,
+                                    "points": flat_pts,
+                                    "box": xyxy,
+                                    "confidence": conf,
+                                    "model": "yolo26x-seg.pt"
+                                })
+            except Exception as ex:
+                print(f"[WARN] YOLO26x-Seg failed: {ex}")
+
+            # B2. SAM 2.1 Large Segment Anything trên các bounding box phát hiện từ YOLO26x-Seg
+            if seg_boxes:
+                try:
+                    sam_res = self.sam(img, bboxes=seg_boxes[:10], verbose=False)
+                    if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
+                        for idx, seg in enumerate(sam_res[0].masks.xy):
+                            if len(seg) >= 3:
+                                flat_pts = [float(c) for pt in seg for c in pt]
+                                lbl = seg_labels[idx] if idx < len(seg_labels) else "object"
+                                cnf = seg_confs[idx] if idx < len(seg_confs) else 0.9
+                                bx = seg_boxes[idx] if idx < len(seg_boxes) else []
+                                segmentations.append({
+                                    "type": "polygon",
+                                    "label": lbl,
+                                    "points": flat_pts,
+                                    "box": bx,
+                                    "confidence": cnf,
+                                    "model": "sam2.1_l.pt"
+                                })
+                except Exception as ex:
+                    print(f"[WARN] SAM 2.1 failed: {ex}")
+
+        return segmentations
+
+    # Phân tích tổng thể
+    @modal.method()
+    def predict_full(self, image_bytes: bytes, threshold: float = 0.25, include_masks: bool = True, include_embedding: bool = False):
+        bbox_res = self.predict_bbox.local(image_bytes, threshold=threshold)
+        segmentations = self.predict_segmentation.local(image_bytes, threshold=threshold) if include_masks else []
+
+        feat = []
+        if include_embedding:
+            import torch
+            from PIL import Image
+            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            self.load_dino()
+            with torch.inference_mode():
                 inputs = self.dino_processor(images=img, return_tensors="pt").to(self.device)
                 feat = self.dino_model(**inputs).last_hidden_state[:, 0, :].squeeze().cpu().tolist()
 
         return {
-            "num_detections": len(predictions),
-            "boxes": boxes,
-            "classes": classes,
-            "labels": labels,
-            "predictions": predictions,
+            "num_detections": bbox_res.get("num_detections", 0),
+            "predictions": bbox_res.get("predictions", []),
+            "model_runs": bbox_res.get("model_runs", []),
             "masks": segmentations,
             "dino_embedding_preview": feat[:10]
         }
@@ -253,7 +328,7 @@ def fastapi_app():
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse
 
-    web_app = FastAPI(title="Modal Vision API (YOLO26x + DINOv3 & YOLO26-Seg + SAM 2.1)")
+    web_app = FastAPI(title="Modal Vision API (YOLO26x + D-FINE-X & YOLO26x-Seg + SAM 2.1 Large)")
     web_app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -268,10 +343,10 @@ def fastapi_app():
     def status():
         return {
             "status": "online",
-            "gpu": "Cloud SOTA Engine",
-            "model": "Modal Cloud Dual-Model Ensemble (YOLO26x + DINOv3 & YOLO26-Seg + SAM 2.1)",
-            "models": ["YOLO26", "DINOv3", "YOLO26-Seg", "SAM2.1"],
-            "device": "cloud-engine",
+            "gpu": "T4",
+            "model": "Modal Dual-Detector (YOLO26x + D-FINE-X) & Flagship Seg (YOLO26x-Seg + SAM 2.1 Large)",
+            "models": ["yolo26x.pt", "dfine_x_coco.pth", "yolo26x-seg.pt", "sam2.1_l.pt"],
+            "device": "cuda:0",
             "capabilities": ["bbox", "segmentation", "sam2"],
             "model_readiness": "ready",
             "label_count": 80,
@@ -288,7 +363,7 @@ def fastapi_app():
             pass
         return status()
 
-    # 1. Endpoint test nguyên bản theo hướng dẫn của bạn (Hỗ trợ upload ảnh file hoặc json base64)
+    # 1. Endpoint test nguyên bản
     @web_app.post("/analyze")
     async def analyze(file: UploadFile = File(None), request: Request = None):
         img_bytes = None
@@ -308,7 +383,7 @@ def fastapi_app():
         res = await engine.predict_full.remote.aio(img_bytes, include_embedding=True)
         return res
 
-    # 2. Endpoint chuẩn QC Studio cho Object Detection (BBox)
+    # 2. Endpoint chuẩn QC Studio cho Object Detection (BBox) - YOLO26x + RT-DETR-X
     @web_app.post("/bbox")
     async def bbox_infer(request: Request):
         try:
@@ -320,14 +395,16 @@ def fastapi_app():
             if not 0 <= thresh <= 1:
                 raise ValueError("threshold must be between 0 and 1")
             img_bytes = decode_image(img_b64)
-            res = await engine.predict_full.remote.aio(img_bytes, threshold=thresh, include_masks=False)
+            res = await engine.predict_bbox.remote.aio(img_bytes, threshold=thresh)
+            if body.get("include_metadata"):
+                return {"predictions": res.get("predictions", []), "model_runs": res.get("model_runs", [])}
             return res.get("predictions", [])
         except (ValueError, TypeError) as e:
             return JSONResponse(status_code=400, content={"error": str(e)})
         except Exception as e:
             return JSONResponse(status_code=503, content={"error": str(e)})
 
-    # 3. Endpoint chuẩn QC Studio cho Segmentation (SAM 2.1 / Polygon Masks)
+    # 3. Endpoint chuẩn QC Studio cho Segmentation - YOLO26x-Seg + SAM 2.1 Large
     @web_app.post("/segmentation")
     @web_app.post("/sam2")
     async def seg_infer(request: Request):
@@ -340,8 +417,8 @@ def fastapi_app():
             if not 0 <= thresh <= 1:
                 raise ValueError("threshold must be between 0 and 1")
             img_bytes = decode_image(img_b64)
-            res = await engine.predict_full.remote.aio(img_bytes, threshold=thresh, include_masks=True)
-            return res.get("masks", [])
+            res = await engine.predict_segmentation.remote.aio(img_bytes, threshold=thresh)
+            return res if isinstance(res, list) else []
         except (ValueError, TypeError) as e:
             return JSONResponse(status_code=400, content={"error": str(e)})
         except Exception as e:

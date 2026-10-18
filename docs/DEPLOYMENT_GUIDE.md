@@ -44,12 +44,26 @@ Hệ thống đã được đóng gói thành một Dockerfile tối ưu All-in-
    - **Plan:** Chọn **Free** ($0/tháng).
    - **Advanced $\rightarrow$ Environment Variables (nếu cần):**
      - `QC_PUBLIC_DEMO`: `true` (mặc định để bảo vệ an toàn, không lộ credential).
+     - `QC_MODAL_API_URL` (tùy chọn): endpoint của deployment Modal do bạn quản lý. Để trống nếu không dùng Modal; repo không cung cấp endpoint dùng chung.
 4. **Bấm "Deploy Web Service":**
    - Render sẽ tự động kéo image .NET 10 SDK, build Blazor, cài Python packages và khởi động container. Quá trình mất khoảng 2 - 3 phút.
    - Khi hoàn tất, Render cấp một URL dạng: `https://qc-studio-2d-blazor.onrender.com`.
    - Bấm vào URL để vào thẳng giao diện Blazor trên nền web đám mây.
 
 *(Lưu ý về gói Render Free: Web Service sẽ tạm ngủ (spin down) nếu sau 15 phút không có người truy cập; khi có người bấm lại vào link, service sẽ mất khoảng 45-60 giây để khởi động lại).*
+
+### Modal inference (tùy chọn)
+
+`deploy_vision.py` mặc định chạy CPU để tránh phát sinh phí GPU. Model weights được Modal tải khi container inference khởi động; cold start đầu tiên có thể lâu. Nếu tài khoản Modal đã bật thanh toán và muốn tăng tốc inference, đặt biến trước khi deploy:
+
+```powershell
+$env:QC_MODAL_GPU = "L4"
+$env:QC_MODAL_YOLO_WEIGHTS = "yolo11x.pt"  # tùy chọn
+$env:QC_MODAL_RTDETR_WEIGHTS = "rtdetr-l.pt"  # tùy chọn
+python -m modal deploy deploy_vision.py
+```
+
+Bỏ `QC_MODAL_GPU` hoặc để trống nếu muốn chạy CPU. GPU Modal cần phương thức thanh toán hợp lệ; xem [hướng dẫn GPU của Modal](https://modal.com/docs/guide/gpu).
 
 ---
 

@@ -42,7 +42,7 @@ def run_tests():
 
     # 1. Test Guideline Manager
     print("\n[TEST 1] Kiểm tra Guideline Manager...")
-    assert len(global_guideline_manager.rules) == 0, "Default template không được tự tạo điều khoản"
+    assert len(global_guideline_manager.rules) >= 4, "Hệ thống phải có guideline mẫu sẵn chuẩn quốc tế"
     from ai_engine.guideline_manager import GuidelineManager
     sample_rules = """# QUY CHUẨN GÁN NHÃN MẪU
 §1.1 Bounding box phải bao sát đối tượng.

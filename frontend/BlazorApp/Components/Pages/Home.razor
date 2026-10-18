@@ -51,9 +51,9 @@
                         <div class="file-meta"><span><i class="bi bi-braces"></i> @(ProfileJson is null ? "BDD100K default · profile selects other formats" : GetString(ProfileJson.Value, "annotation_format", "custom profile"))</span><span><i class="bi bi-lock"></i> Stays in this workspace</span></div>
                         <label class="compact-upload" for="profile-file" style="margin-top:12px;width:100%;justify-content:space-between"><InputFile id="profile-file" OnChange="OnProfileSelected" accept=".json,application/json" /><i class="bi bi-braces"></i><span>@(ProfileFileName ?? "Add dataset profile")</span><small>format · ontology · thresholds</small></label>
                     </article>
-                    <article class="setup-card"><div class="card-head"><span class="card-icon mint"><i class="bi bi-journal-check"></i></span><span class="card-kicker">INPUT 02</span><span class="required">REQUIRED</span></div><h2>Team guideline</h2><p>Provide a Markdown or text guideline. The built-in BDD100K text is an unapproved template; upload the project's approved policy before relying on policy-specific findings.</p>
-                        <label class="dropzone guideline-drop" for="guideline-file"><InputFile id="guideline-file" OnChange="OnGuidelineSelected" accept=".md,.txt,text/plain,text/markdown" /><span class="upload-symbol"><i class="bi bi-journal-arrow-up"></i></span><strong>@(GuidelineFileName ?? "Choose guideline file")</strong><small>@(GuidelineFileName is null ? "Markdown or plain text" : $"{GuidelineFileName} · loaded")</small><span class="browse-button secondary">Browse files</span></label>
-                        <div class="file-meta"><span><i class="bi bi-bookmark-check"></i> Clauses cited in issues</span><button class="text-button" @onclick="OpenGuideline">Edit current guideline <i class="bi bi-arrow-up-right"></i></button></div>
+                    <article class="setup-card"><div class="card-head"><span class="card-icon mint"><i class="bi bi-journal-check"></i></span><span class="card-kicker">INPUT 02</span><span class="required" style="background:#1e293b;color:#38bdf8;border:1px solid #0284c7">MẶC ĐỊNH / SẴN CÓ</span></div><h2>Quy chuẩn Guideline</h2><p>Hệ thống có sẵn <b>Quy chuẩn mặc định QC Studio</b> (độ khít IoU &ge; 0.50, giới hạn viền, kích thước tối thiểu, trùng box). Nếu bạn có guideline riêng, hãy tải lên để Gemini tự động trích xuất và điều chỉnh luật.</p>
+                        <label class="dropzone guideline-drop" for="guideline-file"><InputFile id="guideline-file" OnChange="OnGuidelineSelected" accept=".md,.txt,text/plain,text/markdown" /><span class="upload-symbol"><i class="bi bi-journal-arrow-up"></i></span><strong>@(GuidelineFileName ?? "Guideline Hệ Thống (Mặc định)")</strong><small>@(GuidelineFileName is null ? "Quy chuẩn nội bộ QC Studio đang kích hoạt" : $"{GuidelineFileName} · Đã nạp guideline")</small><span class="browse-button secondary">Tải guideline khác</span></label>
+                        <div class="file-meta"><span><i class="bi bi-bookmark-check"></i> Điều khoản áp dụng</span><button class="text-button" @onclick="OpenGuideline">Xem / Sửa guideline <i class="bi bi-arrow-up-right"></i></button></div>
                     </article>
                     <article class="setup-card cvat-config-card">
                         <div class="card-head"><span class="card-icon mint"><i class="bi bi-plug"></i></span><span class="card-kicker">CVAT INTEGRATION</span><span class="required">CLOUD & LOCAL</span></div>
@@ -148,8 +148,86 @@
                     </article>
                     <article class="setup-card image-card"><div class="card-head"><span class="card-icon amber"><i class="bi bi-images"></i></span><span class="card-kicker">@(Mode == "segmentation" ? "REQUIRED IMAGE + MASK PAIR" : "IMAGE INPUT")</span></div><h2>Frame images & masks</h2><p>@(Mode == "segmentation" ? "Attach JPGs, train-ID masks for metric comparison, and color masks for display." : "Attach matching images for local model inference. BDD100K archive lookup is a fallback.")</p><label class="compact-upload" for="images-file"><InputFile id="images-file" OnChange="OnImagesSelected" accept="image/*" multiple /><i class="bi bi-plus-lg"></i><span>@(ImageFiles.Count == 0 ? "Add images" : $"{ImageFiles.Count} images attached")</span><small>match by filename</small></label>@if (Mode == "segmentation") { <label class="compact-upload mask-upload" for="index-masks-file"><InputFile id="index-masks-file" OnChange="OnIndexMasksSelected" accept="image/png" multiple /><i class="bi bi-grid-3x3"></i><span>@(IndexMaskFiles.Count == 0 ? "Add train-ID masks" : $"{IndexMaskFiles.Count} index masks")</span><small>PNG · masks/index/</small></label><label class="compact-upload mask-upload" for="masks-file"><InputFile id="masks-file" OnChange="OnMasksSelected" accept="image/png" multiple /><i class="bi bi-layers"></i><span>@(MaskFiles.Count == 0 ? "Add color masks" : $"{MaskFiles.Count} color masks")</span><small>PNG · masks/color/</small></label> }</article>
                 </div>
+                @if (TaxonomyAlignment is not null)
+                {
+                    var activeList = GetArray(TaxonomyAlignment.Value, "active_classes");
+                    var unsupList = GetArray(TaxonomyAlignment.Value, "unsupported_guideline_classes");
+                    var exclList = GetArray(TaxonomyAlignment.Value, "excluded_model_classes");
+                    var summary = GetString(TaxonomyAlignment.Value, "summary", "");
+                    var cov = GetDouble(TaxonomyAlignment.Value, "model_coverage_percent", 100.0);
+
+                    <div class="taxonomy-alignment-card" style="margin-top:14px;padding:16px;background:linear-gradient(135deg, #101725, #0d131f);border:1px solid #2a3a50;border-radius:10px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="background:rgba(129, 140, 248, 0.15);color:#a5b4fc;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:0.5px">
+                                    <i class="bi bi-diagram-3-fill"></i> MODEL CAPABILITY MATRIX
+                                </span>
+                                <span style="font-size:13px;font-weight:600;color:#f1f5f9">Đối Soát Danh Mục Nhãn & Năng Lực Model (theo metadata provider)</span>
+                            </div>
+                            <span style="font-size:11px;color:#38bdf8;background:rgba(56, 189, 248, 0.12);padding:3px 9px;border-radius:6px;border:1px solid rgba(56, 189, 248, 0.25)">
+                                Độ phủ Model: <b>@(GetString(TaxonomyAlignment.Value, "status", "") == "verified" ? $"{cov}%" : "Chưa xác minh")</b>
+                            </span>
+                        </div>
+
+                        <p style="font-size:11px;color:#94a3b8;line-height:1.55;margin:0 0 12px 0;">
+                            <i class="bi bi-stars" style="color:#f59e0b;margin-right:4px;"></i> @summary
+                        </p>
+
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;">
+                            <div style="background:#090d14;border:1px solid #1e293b;border-radius:8px;padding:10px;">
+                                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                                    <span style="color:#4ade80;font-size:11px;font-weight:700;"><i class="bi bi-check-circle-fill"></i> Model AI Khảo Sát (@activeList.Count)</span>
+                                    <small style="color:#64748b;font-size:9px">Theo model đã cấu hình</small>
+                                </div>
+                                <div style="display:flex;flex-wrap:wrap;gap:5px;">
+                                    @foreach (var c in activeList)
+                                    {
+                                        <span style="background:rgba(74, 222, 128, 0.12);color:#86efac;border:1px solid rgba(74, 222, 128, 0.25);padding:2px 7px;border-radius:4px;font-size:10px;font-family:'DM Mono',monospace;">@c</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <div style="background:#090d14;border:1px solid #1e293b;border-radius:8px;padding:10px;">
+                                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                                    <span style="color:#facc15;font-size:11px;font-weight:700;"><i class="bi bi-eye-slash-fill"></i> Điểm Mù Model (@unsupList.Count)</span>
+                                    <small style="color:#64748b;font-size:9px">Luật vật lý + Thủ công</small>
+                                </div>
+                                <div style="display:flex;flex-wrap:wrap;gap:5px;">
+                                    @if (unsupList.Count == 0)
+                                    {
+                                        <span style="color:#64748b;font-size:10px;font-style:italic">Chưa ghi nhận; xem trạng thái xác minh.</span>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var c in unsupList)
+                                        {
+                                            <span style="background:rgba(250, 204, 21, 0.12);color:#fde047;border:1px solid rgba(250, 204, 21, 0.25);padding:2px 7px;border-radius:4px;font-size:10px;font-family:'DM Mono',monospace;">@c</span>
+                                        }
+                                    }
+                                </div>
+                            </div>
+
+                            <div style="background:#090d14;border:1px solid #1e293b;border-radius:8px;padding:10px;">
+                                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                                    <span style="color:#94a3b8;font-size:11px;font-weight:700;"><i class="bi bi-funnel-fill"></i> Tự Động Lọc Bỏ (@exclList.Count)</span>
+                                    <small style="color:#64748b;font-size:9px">Không gây rối</small>
+                                </div>
+                                <div style="display:flex;flex-wrap:wrap;gap:5px;max-height:55px;overflow-y:auto;">
+                                    @foreach (var c in exclList.Take(12))
+                                    {
+                                        <span style="background:rgba(148, 163, 184, 0.1);color:#94a3b8;border:1px solid rgba(148, 163, 184, 0.2);padding:1px 6px;border-radius:4px;font-size:9px;font-family:'DM Mono',monospace;">@c</span>
+                                    }
+                                    @if (exclList.Count > 12)
+                                    {
+                                        <span style="color:#64748b;font-size:9px;padding:2px;">+@(exclList.Count - 12) nhãn khác</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
                 @if (!string.IsNullOrWhiteSpace(StatusMessage)) { <div class="status-message @(HasError ? "error" : "")"><i class="bi @(HasError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @StatusMessage</div> }
-                <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "QC + Gemini review" : ModelsMode == "remote" ? "Modal Cloud review" : "Local-only review")</b><small>@(UseGemini ? "Gemini sẽ nhận guideline và tối đa số frame đã chọn từ máy này. Bỏ chọn Gemini để không gửi dữ liệu lên cloud." : ModelsMode == "remote" ? "Ảnh được gửi tới Modal Cloud đã cấu hình; Gemini không được gọi." : "Ảnh chỉ gửi tới model local trên loopback; Gemini cloud không được gọi.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.") Số lượng candidate có thể khác giữa máy do model/weights local khác nhau.</small></span></div><button class="primary-button" disabled="@IsBusy" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : ModelsMode == "remote" ? "Run QC + Modal" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
+                <div class="setup-footer"><div class="privacy-note"><i class="bi bi-shield-check"></i><span><b>@(UseGemini ? "QC + Gemini review" : ModelsMode == "remote" ? "Modal Cloud review" : "Local-only review")</b><small>@(UseGemini ? "Gemini nhận ảnh có bất đồng để phân xử. Model Modal vẫn nhận ảnh nếu đã được cấu hình." : ModelsMode == "remote" ? "Ảnh được gửi tới Modal Cloud đã cấu hình; Không gửi ảnh tới Gemini." : "Ảnh chỉ gửi tới model local trên loopback; Không gửi ảnh tới Gemini.") @(Mode == "segmentation" ? "Cần ảnh + train-ID mask; kết quả IoU là candidate để người review." : "Model findings là candidate để người review.") Số lượng candidate có thể khác giữa máy do model/weights local khác nhau.</small></span></div><button class="primary-button" disabled="@IsBusy" @onclick="RunQc">@(IsBusy ? "Analyzing…" : UseGemini ? "Run QC + Gemini" : ModelsMode == "remote" ? "Run QC + Modal" : "Run local QC") <i class="bi bi-arrow-right"></i></button></div>
                 <div class="setup-card" style="margin-top:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
                     <label style="display:flex;align-items:flex-start;gap:10px;margin:0;max-width:760px"><input type="checkbox" @bind="UseGemini" disabled="@(IsBusy || !GeminiConfigured)" style="margin-top:3px"/><span><b>Kết hợp Gemini vision vào pipeline</b><small style="display:block;color:#94a3b8;margin-top:4px">@(GeminiConfigured ? $"Chỉ gửi ảnh khi bạn bật tùy chọn này (Model: {GeminiModel})." : "Gemini chưa được cấu hình. Thêm GEMINI_API_KEY vào biến môi trường.") Gemini tạo candidate để reviewer xác nhận.</small><small style="display:block;color:#fbbf24;margin-top:4px">Khi được chọn, ảnh và guideline sẽ được gửi tới Google. Chọn số frame bên cạnh để giới hạn.</small></span></label>
                     <label style="margin:0;max-width:180px">Số frame tối đa<input type="number" min="1" max="50" @bind="GeminiFrameLimit" disabled="@(!UseGemini || IsBusy)" /></label>
@@ -163,6 +241,22 @@
                 else
                 {
                     <div class="metrics-row"><div class="metric"><small>FRAMES IN RUN</small><b>@Frames.Count</b></div><div class="metric"><small>@(Mode == "segmentation" ? "MACRO IoU" : "FRAMES WITH CANDIDATES")</small><b>@(Mode == "segmentation" ? GetMetric(ResultRoot, "summary", "macro_iou") : ReviewCount.ToString())</b></div><div class="metric"><small>MODEL CANDIDATES</small><b>@GetInt(ResultRoot, "model_issues", 0)</b></div><div class="metric metric-pass"><small>REVIEW DECISIONS</small><b>@TotalDecidedCount / @IssueCount</b><span style="display:block;font-size:9px;color:#94a3b8;margin-top:2px;font-family:'DM Mono',monospace">(@ConfirmedIssueCount đã giữ · @RejectedIssueCount đã xóa)</span></div><div class="metric-source"><i class="bi bi-info-circle"></i>@ModelStatusText · @(GetBool(GetObject(ResultRoot, "gemini"), "used") ? "Gemini + local candidates" : "local-only candidates") · human review required · IoU is not a benchmark</div></div>
+                    @if (TaxonomyAlignment is not null)
+                    {
+                        var activeList = GetArray(TaxonomyAlignment.Value, "active_classes");
+                        var unsupList = GetArray(TaxonomyAlignment.Value, "unsupported_guideline_classes");
+                        var exclList = GetArray(TaxonomyAlignment.Value, "excluded_model_classes");
+                        <div style="margin: 8px 0 12px; padding: 10px 14px; background: #0c121b; border: 1px solid #233142; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                            <div style="display: flex; align-items: center; gap: 12px; font-size: 11px; flex-wrap: wrap;">
+                                <span style="color: #4ade80; font-weight: 700;"><i class="bi bi-check-circle-fill"></i> AI Khảo Sát (@activeList.Count): <span style="font-weight:400;color:#cbd5e1">@string.Join(", ", activeList)</span></span>
+                                @if (unsupList.Count > 0)
+                                {
+                                    <span style="color: #facc15; font-weight: 700;"><i class="bi bi-exclamation-triangle-fill"></i> Điểm Mù (@unsupList.Count): <span style="font-weight:400;color:#fef08a">@string.Join(", ", unsupList) (QC bằng Luật)</span></span>
+                                }
+                            </div>
+                            <span style="font-size: 10px; color: #94a3b8; font-family: 'DM Mono', monospace;">Đã tự động loại trừ @exclList.Count class ngoài dự án</span>
+                        </div>
+                    }
                     <div class="review-layout">
                         <section class="queue-panel"><div class="panel-title"><div><span class="eyebrow">FRAME QUEUE</span><h2>@(Mode == "segmentation" ? "Mask review" : "Review priority")</h2></div><span class="sort-label"><i class="bi @(Mode == "segmentation" ? "bi-images" : "bi-sort-down")"></i> @(Mode == "segmentation" ? "Pack order" : "Rule flags first")</span></div>@if (Mode == "segmentation") { <div class="queue-filters"><span class="filter-pill on">All mask pairs <span>@Frames.Count</span></span></div> } else { <div class="queue-filters"><button class="filter-pill @(QueueFilter == "all" ? "on" : "")" @onclick='() => QueueFilter = "all"'>All <span>@Frames.Count</span></button><button class="filter-pill @(QueueFilter == "review" ? "on" : "")" @onclick='() => QueueFilter = "review"'>Flagged <span>@ReviewCount</span></button><button class="filter-pill @(QueueFilter == "pass" ? "on" : "")" @onclick='() => QueueFilter = "pass"'>No rule flags <span>@PassCount</span></button></div>}
                         <div class="frame-list">@foreach (var frame in VisibleFrames)
@@ -211,8 +305,8 @@
                                 </div>
                                 @if (Mode == "segmentation") {
                                     <div>
-                                        <button class="layer-btn @(ShowModelMask ? "" : "active")" @onclick="() => ShowModelMask = false">Uploaded</button>
-                                        <button class="layer-btn @(ShowModelMask ? "active" : "")" @onclick="ToggleModelMask">Local model</button>
+                                        <button class="layer-btn @(ShowModelMask ? "" : "active")" @onclick="() => ShowModelMask = false">Uploaded Mask</button>
+                                        <button class="layer-btn @(ShowModelMask ? "active" : "")" @onclick="ToggleModelMask">AI Model Mask</button>
                                     </div>
                                 }
                             </div>
@@ -249,6 +343,11 @@
                                                         if (predBox is not null)
                                                         {
                                                             <rect x="@predBox.Value.X" y="@predBox.Value.Y" width="@predBox.Value.W" height="@predBox.Value.H" class="model-box" />
+                                                        }
+                                                        var polyPts = GetPolygonPoints(prediction);
+                                                        if (!string.IsNullOrEmpty(polyPts))
+                                                        {
+                                                            <polygon points="@polyPts" class="model-polygon-overlay" />
                                                         }
                                                     }
                                                 }
@@ -332,7 +431,7 @@
                                                             {
                                                                 <foreignObject x="@predBox.Value.X" y="@predBox.Value.Y" width="190" height="22">
                                                                     <div class="@(isAccepted ? "label-text" : "model-label")">
-                                                                        @(isAccepted ? "✓ " : $"{FormatModelShortName(GetString(item, "model", "AI"))}: ")@GetString(item, "category", "object")
+                                                                        @(isAccepted ? "✓ " : "")@GetString(item, "category", "object")
                                                                     </div>
                                                                 </foreignObject>
                                                             }
@@ -413,18 +512,6 @@
                                                  @onclick="() => SelectIssue(issue)">
                                             <div class="issue-top">
                                                 <span class="severity-tag sev-@severity.ToLowerInvariant()">@severity</span>
-                                                @if (GetString(issue, "qa_layer", "").Contains("Hội đồng"))
-                                                {
-                                                    <span class="issue-layer-badge badge-council"><i class="bi bi-people-fill"></i> Hội đồng AI</span>
-                                                }
-                                                else if (GetString(issue, "qa_layer", "").Contains("Gemini") || GetString(issue, "error_type", "") == "GEMINI_ARBITRATED_DISPUTE")
-                                                {
-                                                    <span class="issue-layer-badge badge-gemini"><i class="bi bi-stars"></i> Trọng tài Gemini</span>
-                                                }
-                                                else
-                                                {
-                                                    <span class="issue-layer-badge badge-rule"><i class="bi bi-shield-check"></i> Luật</span>
-                                                }
                                             </div>
                                             <h3 class="issue-title-short">@FormatIssueTitle(issue)</h3>
                                             <p class="issue-expl-short">@FormatCleanExplanation(issue)</p>
@@ -440,10 +527,6 @@
                                                 @if (GetString(issue, "iou", "") is var iou && !string.IsNullOrEmpty(iou))
                                                 {
                                                     <span class="pill-badge pill-iou">IoU: @iou</span>
-                                                }
-                                                @if (!string.IsNullOrWhiteSpace(GetString(issue, "model_name", "")))
-                                                {
-                                                    <span class="pill-badge pill-model"><i class="bi bi-cpu"></i> @FormatModelShortName(GetString(issue, "model_name", ""))</span>
                                                 }
                                             </div>
                                             @if (GetString(issue, "guideline_rule", "") is var gRule && !string.IsNullOrWhiteSpace(gRule) && !gRule.Contains("Review against team guideline") && !gRule.Contains("Review against standard dataset rules"))
@@ -643,10 +726,10 @@
     private JsonElement? ProfileJson;
     private string WorkspaceName = "Local workspace";
     private string? WorkspaceId;
-    private bool ShowModelMask;
+    private bool ShowModelMask = true;
     private double ZoomLevel = 1.0;
     private bool IsFullscreen = false;
-    private bool OnlyShowIssues = true;
+    private bool OnlyShowIssues = false;
     private bool SwapHumanAndModel = false;
     private bool ShowHumanBoxes = true;
     private bool ShowModelBoxes = true;
@@ -668,6 +751,7 @@
     private string GuidelineSearch = "";
     private IEnumerable<string> GuidelineMatches => string.IsNullOrWhiteSpace(GuidelineSearch) ? Enumerable.Empty<string>() : GuidelineText.Split('\n').Where(line => line.Contains(GuidelineSearch, StringComparison.OrdinalIgnoreCase)).Take(20);
     private bool GuidelineOpen;
+    private JsonElement? TaxonomyAlignment;
     private int CvatJobId;
     private int CvatFrameOffset;
     private int CvatAssigneeId;
@@ -796,6 +880,10 @@
             catch { ModelProviders.Clear(); }
             await InvokeAsync(StateHasChanged);
 
+            await LoadDefaultGuideline();
+            await RefreshTaxonomyAlignment();
+            await InvokeAsync(StateHasChanged);
+
             await RefreshCvatConnection();
             await InvokeAsync(StateHasChanged);
         }
@@ -804,6 +892,100 @@
             IsConnecting = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private async Task LoadDefaultGuideline()
+    {
+        if (!string.IsNullOrWhiteSpace(GuidelineText)) return;
+        try
+        {
+            var res = await Api.GetFromJsonAsync<JsonElement>("/api/guideline/default");
+            var defaultText = GetString(res, "guideline_text", GetString(res, "raw_text", ""));
+            if (!string.IsNullOrWhiteSpace(defaultText))
+            {
+                GuidelineText = defaultText;
+                GuidelineFileName = null; // null indicates system default
+            }
+        }
+        catch { }
+    }
+
+    private async Task RefreshTaxonomyAlignment()
+    {
+        try
+        {
+            var datasetClasses = ExtractDatasetClasses();
+            var payload = new
+            {
+                dataset_classes = datasetClasses,
+                guideline_text = GuidelineText,
+                mode = Mode
+            };
+            using var res = await Api.PostAsJsonAsync("/api/guideline/align-taxonomy", payload);
+            if (res.IsSuccessStatusCode)
+            {
+                var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+                if (doc.RootElement.TryGetProperty("alignment", out var alignElem) && alignElem.ValueKind == JsonValueKind.Object)
+                {
+                    TaxonomyAlignment = alignElem.Clone();
+                }
+                else
+                {
+                    TaxonomyAlignment = doc.RootElement.Clone();
+                }
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch { }
+    }
+
+    private List<string> ExtractDatasetClasses()
+    {
+        var classes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (LabelsJson is null) return classes.ToList();
+
+        if (LabelsJson.Value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var frame in LabelsJson.Value.EnumerateArray())
+            {
+                if (frame.TryGetProperty("labels", out var lbls) && lbls.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var lbl in lbls.EnumerateArray())
+                    {
+                        if (lbl.TryGetProperty("category", out var cat) && !string.IsNullOrWhiteSpace(cat.GetString()))
+                        {
+                            classes.Add(cat.GetString()!);
+                        }
+                    }
+                }
+            }
+        }
+        else if (LabelsJson.Value.ValueKind == JsonValueKind.Object)
+        {
+            if (LabelsJson.Value.TryGetProperty("categories", out var cats) && cats.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var c in cats.EnumerateArray())
+                {
+                    if (c.TryGetProperty("name", out var n) && !string.IsNullOrWhiteSpace(n.GetString()))
+                        classes.Add(n.GetString()!);
+                }
+            }
+            if (LabelsJson.Value.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var frame in data.EnumerateArray())
+                {
+                    if (frame.TryGetProperty("labels", out var lbls) && lbls.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var lbl in lbls.EnumerateArray())
+                        {
+                            if (lbl.TryGetProperty("category", out var cat) && !string.IsNullOrWhiteSpace(cat.GetString()))
+                                classes.Add(cat.GetString()!);
+                        }
+                    }
+                }
+            }
+        }
+        return classes.ToList();
     }
 
     private HttpRequestMessage CreateCvatRequest(HttpMethod method, string path, object? jsonBody = null)
@@ -901,6 +1083,7 @@
             if (WorkspaceName == "Local workspace") WorkspaceName = Path.GetFileNameWithoutExtension(file.Name);
             StatusMessage = $"Đã đọc {FrameCount} frame từ {file.Name}.";
             HasError = false;
+            await RefreshTaxonomyAlignment();
         }
         catch (Exception ex) { LabelsJson = null; StatusMessage = $"Không đọc được file nhãn JSON: {ex.Message}"; HasError = true; }
     }
@@ -915,7 +1098,7 @@
     }
     private async Task OnGuidelineSelected(InputFileChangeEventArgs e)
     {
-        try { await using var stream = e.File.OpenReadStream(4 * 1024 * 1024); using var reader = new StreamReader(stream); GuidelineText = await reader.ReadToEndAsync(); GuidelineFileName = e.File.Name; await SaveGuidelineDraft(true); }
+        try { await using var stream = e.File.OpenReadStream(4 * 1024 * 1024); using var reader = new StreamReader(stream); GuidelineText = await reader.ReadToEndAsync(); GuidelineFileName = e.File.Name; await SaveGuidelineDraft(true); await RefreshTaxonomyAlignment(); }
         catch (Exception ex) { StatusMessage = $"Không đọc được guideline: {ex.Message}"; HasError = true; }
     }
     private async Task EnsureWorkspace()
@@ -945,6 +1128,7 @@
             var body = await res.Content.ReadAsStringAsync(); if (!res.IsSuccessStatusCode) throw new InvalidOperationException(body);
             using var doc = JsonDocument.Parse(body); var version = GetInt(doc.RootElement, "version", 0);
             StatusMessage = $"Đã lưu guideline workspace v{version} ({(activate ? "active for next run" : "draft; not applied to runs")})."; HasError = false; GuidelineOpen = false;
+            await RefreshTaxonomyAlignment();
         }
         catch (Exception ex) { StatusMessage = $"Không lưu được guideline: {ex.Message}"; HasError = true; if (throwOnFailure) throw; }
     }
@@ -1062,6 +1246,7 @@
                 }
             }
 
+            await RefreshTaxonomyAlignment();
             StatusMessage = $"⚡ Đã nạp trọn bộ DEMO thành công: {FrameCount} frame, guideline và {ImageFiles.Count} ảnh! Bạn hãy bấm 'Run local QC' bên dưới để bắt đầu.";
             HasError = false;
         }
@@ -1140,9 +1325,7 @@
         }
         if (string.IsNullOrWhiteSpace(GuidelineText))
         {
-            StatusMessage = "⚠️ Guideline đang trống. Vui lòng nạp tệp guideline hoặc bấm 'Nạp bộ test 50 ảnh' để nạp guideline mẫu.";
-            HasError = true;
-            return;
+            await LoadDefaultGuideline();
         }
         IsBusy = true; HasError = false; StatusMessage = null;
         try
@@ -1173,6 +1356,10 @@
             using var doc = JsonDocument.Parse(body); ResultRoot = doc.RootElement.Clone(); Frames = GetArray(ResultRoot, "sorted_frames");
             if (Frames.Count == 0) throw new InvalidOperationException("API không trả về frame nào. Kiểm tra profile, taxonomy và mask mapping.");
             IssueDecisions.Clear(); SelectedFrameName = GetString(Frames[0], "frame_name", ""); SelectedFrame = Frames[0]; Step = 1; ApiOnline = true; ShowModelMask = false;
+            if (ResultRoot.TryGetProperty("taxonomy_alignment", out var taxAlign) && taxAlign.ValueKind == JsonValueKind.Object)
+            {
+                TaxonomyAlignment = taxAlign.Clone();
+            }
             var models = GetArray(ResultRoot, "models");
             var skipped = GetArray(ResultRoot, "model_skips").Count;
             var modelIssues = GetInt(ResultRoot, "model_issues", 0);
@@ -1243,8 +1430,8 @@
         return SelectedIssues.Any(i => {
             var oid = GetString(i, "object_id", "");
             var issueId = GetString(i, "issue_id", "");
-            if (oid == $"MODEL_{idx}") return true;
-            if (issueId.Contains($":prediction:{idx}")) return true;
+            if (oid == $"MODEL_{idx}" || oid == $"DUAL_{idx}" || oid == $"ARB_{idx}") return true;
+            if (issueId.Contains($":prediction:{idx}") || issueId.Contains($":unlabeled:{idx}_") || issueId.Contains($":unlabeled:_{idx}") || issueId.Contains($":single_unlabeled:{idx}")) return true;
             return false;
         });
     }
@@ -1847,7 +2034,7 @@
     {
         var expl = GetString(issue, "explanation", "");
         if (string.IsNullOrWhiteSpace(expl)) return "Không có mô tả.";
-        expl = System.Text.RegularExpressions.Regex.Replace(expl, @"^(Hội đồng:\s*|\[Trọng tài Gemini\]\s*)", "");
+        expl = System.Text.RegularExpressions.Regex.Replace(expl, @"^(Hội đồng:\s*|\[Trọng tài Gemini\]\s*|\[Gemini\]\s*|AI:\s*)", "");
         return expl;
     }
     private static string FormatModelShortName(string raw)
@@ -1877,6 +2064,12 @@
         if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number;
         return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number) ? number : fallback;
     }
+    private static double GetDouble(JsonElement element, string property, double fallback)
+    {
+        var value = GetProperty(element, property);
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number)) return number;
+        return value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out number) ? number : fallback;
+    }
     private static bool GetBool(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.True;
     private static List<JsonElement> GetArray(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.Array ? v.EnumerateArray().Select(x => x.Clone()).ToList() : new();
     private static JsonElement GetObject(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var v) && v.ValueKind == JsonValueKind.Object ? v : default;
@@ -1889,16 +2082,38 @@
     }
     private static (double X, double Y, double W, double H)? GetPredictionBox(JsonElement prediction)
     {
-        if (prediction.ValueKind != JsonValueKind.Object || !prediction.TryGetProperty("box", out var box) || box.ValueKind != JsonValueKind.Array || box.GetArrayLength() < 4) return null;
-        if (!TryNumber(box[0], out var x) || !TryNumber(box[1], out var y) || !TryNumber(box[2], out var x2) || !TryNumber(box[3], out var y2)) return null;
-        var w = x2 - x; var h = y2 - y;
-        return w > 0 && h > 0 ? (x, y, w, h) : null;
+        if (prediction.ValueKind != JsonValueKind.Object) return null;
+        if (prediction.TryGetProperty("box", out var box) && box.ValueKind == JsonValueKind.Array && box.GetArrayLength() >= 4)
+        {
+            if (TryNumber(box[0], out var x) && TryNumber(box[1], out var y) && TryNumber(box[2], out var x2) && TryNumber(box[3], out var y2))
+            {
+                var w = x2 - x; var h = y2 - y;
+                if (w > 0 && h > 0) return (x, y, w, h);
+            }
+        }
+        if (prediction.TryGetProperty("points", out var pts) && pts.ValueKind == JsonValueKind.Array && pts.GetArrayLength() >= 4)
+        {
+            if (TryNumber(pts[0], out var px) && TryNumber(pts[1], out var py) && TryNumber(pts[2], out var px2) && TryNumber(pts[3], out var py2))
+            {
+                var pw = px2 - px; var ph = py2 - py;
+                if (pw > 0 && ph > 0) return (px, py, pw, ph);
+            }
+        }
+        return null;
     }
     private static (double X, double Y, double W, double H)? GetAnyBox(JsonElement el)
     {
         if (el.ValueKind != JsonValueKind.Object) return null;
         if (el.TryGetProperty("box2d", out _)) return GetBox(el);
         if (el.TryGetProperty("box", out _)) return GetPredictionBox(el);
+        if (el.TryGetProperty("points", out var pts) && pts.ValueKind == JsonValueKind.Array && pts.GetArrayLength() >= 4)
+        {
+            if (TryNumber(pts[0], out var x1) && TryNumber(pts[1], out var y1) && TryNumber(pts[2], out var x2) && TryNumber(pts[3], out var y2))
+            {
+                var w = x2 - x1; var h = y2 - y1;
+                if (w > 0 && h > 0) return (x1, y1, w, h);
+            }
+        }
         return null;
     }
     private (double X, double Y, double W, double H)? GetIssueBox(JsonElement issue)
@@ -1920,11 +2135,26 @@
     }
     private static string GetPolygonPoints(JsonElement polygon)
     {
-        if (polygon.ValueKind != JsonValueKind.Object || !polygon.TryGetProperty("vertices", out var vertices) || vertices.ValueKind != JsonValueKind.Array) return "";
-        var points = new List<string>();
-        foreach (var point in vertices.EnumerateArray())
-            if (point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2 && TryNumber(point[0], out var x) && TryNumber(point[1], out var y))
-                points.Add($"{x.ToString(System.Globalization.CultureInfo.InvariantCulture)},{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
-        return string.Join(" ", points);
+        if (polygon.ValueKind != JsonValueKind.Object) return "";
+        if (polygon.TryGetProperty("vertices", out var vertices) && vertices.ValueKind == JsonValueKind.Array)
+        {
+            var points = new List<string>();
+            foreach (var point in vertices.EnumerateArray())
+                if (point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2 && TryNumber(point[0], out var x) && TryNumber(point[1], out var y))
+                    points.Add($"{x.ToString(System.Globalization.CultureInfo.InvariantCulture)},{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            return string.Join(" ", points);
+        }
+        if (polygon.TryGetProperty("points", out var flatPts) && flatPts.ValueKind == JsonValueKind.Array)
+        {
+            var points = new List<string>();
+            var arr = flatPts.EnumerateArray().ToList();
+            for (int i = 0; i + 1 < arr.Count; i += 2)
+            {
+                if (TryNumber(arr[i], out var x) && TryNumber(arr[i + 1], out var y))
+                    points.Add($"{x.ToString(System.Globalization.CultureInfo.InvariantCulture)},{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            }
+            return string.Join(" ", points);
+        }
+        return "";
     }
 }

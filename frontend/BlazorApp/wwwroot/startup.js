@@ -11,7 +11,7 @@ Promise.resolve().then(() => {
     if (typeof Blazor !== 'undefined' && Blazor.start) {
         return Blazor.start();
     }
-    return Promise.resolve();
+    throw new Error('Blazor runtime did not load');
 }).then(() => {
     clearTimeout(slowStart);
     if (startup) {

@@ -110,6 +110,7 @@ class GeminiArbitrationTests(unittest.TestCase):
              patch("urllib.request.urlopen", return_value=mock_response):
             res = gemini_provider.arbitrate_dispute(
                 image_data=b"fake_bytes",
+                guideline="car: xe con; truck: xe tải.",
                 object_info={"category": "car", "box": [10, 10, 100, 100]},
                 model_a_info={"model": "YOLO26", "category": "car", "confidence": 0.9},
                 model_b_info={"model": "DINOv3", "category": "truck", "confidence": 0.8}

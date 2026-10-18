@@ -21,12 +21,12 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(options =>
     {
         options.DetailedErrors = builder.Environment.IsDevelopment();
-        options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(5);
-        options.DisconnectedCircuitMaxRetained = 100;
+        options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(2);
+        options.DisconnectedCircuitMaxRetained = 10;
     }).AddHubOptions(options =>
 {
     // Generous limit for SignalR message chunks
-    options.MaximumReceiveMessageSize = 10 * 1024 * 1024;
+    options.MaximumReceiveMessageSize = 1024 * 1024;
 });
 
 builder.Services.AddMudServices();

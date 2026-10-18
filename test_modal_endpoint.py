@@ -1,12 +1,14 @@
 """
 Script kiểm tra kết nối tới Modal Cloud GPU API.
 Cách dùng:
-    python test_modal_endpoint.py https://vanthang10tin--vision-pipeline-api-fastapi-app.modal.run
+    python test_modal_endpoint.py https://<your-modal-app>.modal.run
+Hoặc đặt QC_MODAL_API_URL trong môi trường rồi chạy script không tham số.
 """
-import sys
+import argparse
 import io
 import json
 import base64
+import os
 import urllib.request
 from PIL import Image, ImageDraw
 
@@ -53,12 +55,14 @@ def test_endpoint(base_url: str):
     print("\n🎉 Toàn bộ endpoint trên Modal GPU đã sẵn sàng kết nối vào QC Studio!")
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        target_url = sys.argv[1]
-    else:
-        target_url = input("Nhập URL Modal API của bạn (ví dụ: https://vanthang10tin--vision-pipeline-api-fastapi-app.modal.run): ").strip()
-
-    if target_url:
-        test_endpoint(target_url)
-    else:
-        print("Vui lòng cung cấp URL để test.")
+    parser = argparse.ArgumentParser(description="Check a configured Modal vision API endpoint.")
+    parser.add_argument(
+        "url",
+        nargs="?",
+        default=os.environ.get("QC_MODAL_API_URL", ""),
+        help="Modal API base URL (defaults to QC_MODAL_API_URL)",
+    )
+    args = parser.parse_args()
+    if not args.url.strip():
+        parser.error("provide a URL or set QC_MODAL_API_URL")
+    test_endpoint(args.url)

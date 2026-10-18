@@ -1,2 +1,4 @@
 -r requirements.txt
 pytest>=8.0
+# Starlette's TestClient requires httpx2 on current Starlette releases.
+starlette[full]>=1.3.0
