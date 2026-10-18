@@ -45,14 +45,14 @@ def _ontology(profile: dict[str, Any], fallback: list[str] | None = None) -> tup
             alias_map[_normal(alias)] = canonical
     norm_names = {_normal(n): n for n in names}
     domain_aliases = {
-        "person": "pedestrian", "nguoi": "pedestrian", "people": "pedestrian",
-        "traffic light": "traffic_light", "den giao thong": "traffic_light",
-        "traffic sign": "traffic_sign", "bien bao": "traffic_sign",
+        "person": "pedestrian", "nguoi": "pedestrian", "people": "pedestrian", "human": "pedestrian",
+        "traffic light": "traffic_light", "den giao thong": "traffic_light", "trafficlight": "traffic_light",
+        "traffic sign": "traffic_sign", "bien bao": "traffic_sign", "trafficsign": "traffic_sign", "stop sign": "traffic_sign",
         "xanh sm": "car", "xanh_sm": "car", "xanh-sm": "car", "taxi": "car", "cab": "car",
-        "automobile": "car", "auto": "car", "o to": "car", "oto": "car", "xe hoi": "car",
-        "motorbike": "motorcycle", "xe may": "motorcycle", "scooter": "motorcycle",
-        "bike": "bicycle", "xe dap": "bicycle",
-        "van": "truck", "xe tai": "truck", "xe buyt": "bus", "xe bus": "bus"
+        "automobile": "car", "auto": "car", "o to": "car", "oto": "car", "xe hoi": "car", "vehicle": "car", "sedan": "car", "suv": "car",
+        "motorbike": "motorcycle", "xe may": "motorcycle", "scooter": "motorcycle", "moped": "motorcycle",
+        "bike": "bicycle", "xe dap": "bicycle", "cyclist": "bicycle",
+        "van": "truck", "xe tai": "truck", "xe buyt": "bus", "xe bus": "bus", "pickup": "truck", "pickup truck": "truck"
     }
     for alias, target in domain_aliases.items():
         if _normal(target) in norm_names and _normal(alias) not in alias_map:
@@ -60,6 +60,79 @@ def _ontology(profile: dict[str, Any], fallback: list[str] | None = None) -> tup
         elif _normal(alias) in norm_names and _normal(target) not in alias_map:
             alias_map[_normal(target)] = norm_names[_normal(alias)]
     return names, alias_map
+
+
+def compute_intersection_area(b1: tuple[float, float, float, float] | list[float],
+                              b2: tuple[float, float, float, float] | list[float]) -> float:
+    x1 = max(float(b1[0]), float(b2[0]))
+    y1 = max(float(b1[1]), float(b2[1]))
+    x2 = min(float(b1[2]), float(b2[2]))
+    y2 = min(float(b1[3]), float(b2[3]))
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def compute_box_area(b: tuple[float, float, float, float] | list[float]) -> float:
+    return max(0.0, float(b[2]) - float(b[0])) * max(0.0, float(b[3]) - float(b[1]))
+
+
+def is_center_inside(b_inner: tuple[float, float, float, float] | list[float],
+                     b_outer: tuple[float, float, float, float] | list[float]) -> bool:
+    cx = 0.5 * (float(b_inner[0]) + float(b_inner[2]))
+    cy = 0.5 * (float(b_inner[1]) + float(b_inner[3]))
+    return float(b_outer[0]) <= cx <= float(b_outer[2]) and float(b_outer[1]) <= cy <= float(b_outer[3])
+
+
+def is_spatial_match(b1: tuple[float, float, float, float] | list[float],
+                     b2: tuple[float, float, float, float] | list[float],
+                     match_iou: float = 0.35) -> tuple[bool, float]:
+    iou = compute_iou(tuple(b1), tuple(b2))
+    inter = compute_intersection_area(b1, b2)
+    if inter <= 0:
+        return False, 0.0
+    a1 = compute_box_area(b1)
+    a2 = compute_box_area(b2)
+    ioa1 = inter / max(1e-6, a1)
+    ioa2 = inter / max(1e-6, a2)
+    center_in = is_center_inside(b1, b2) or is_center_inside(b2, b1)
+    eff_threshold = min(0.35, float(match_iou or 0.35))
+
+    matched = (iou >= eff_threshold) or (ioa1 >= 0.45) or (ioa2 >= 0.45) or (center_in and iou >= 0.20)
+    score = max(iou, 0.8 * min(ioa1, ioa2))
+    return bool(matched), float(score)
+
+
+def is_same_category(cat1: Any, cat2: Any, aliases: dict[str, str] | None = None) -> bool:
+    c1 = _normal(cat1)
+    c2 = _normal(cat2)
+    if not c1 or not c2:
+        return False
+    if c1 == c2:
+        return True
+    if aliases:
+        a1 = _normal(aliases.get(c1, c1))
+        a2 = _normal(aliases.get(c2, c2))
+        if a1 == a2:
+            return True
+        c1, c2 = a1, a2
+
+    synonym_groups = [
+        {"car", "vehicle", "automobile", "auto", "sedan", "suv", "taxi", "cab", "o to", "oto", "xe hoi", "xanh sm", "xanh_sm", "xanh-sm"},
+        {"truck", "van", "pickup", "pickup truck", "xe tai", "lorry"},
+        {"bus", "xe buyt", "xe bus", "coach", "minibus"},
+        {"motorcycle", "motorbike", "scooter", "moped", "xe may"},
+        {"bicycle", "bike", "cyclist", "xe dap"},
+        {"pedestrian", "person", "people", "human", "walker", "nguoi"},
+        {"traffic light", "traffic_light", "trafficlight", "den giao thong", "signal"},
+        {"traffic sign", "traffic_sign", "trafficsign", "stop sign", "bien bao", "sign"},
+    ]
+    for group in synonym_groups:
+        if c1 in group and c2 in group:
+            return True
+
+    if len(c1) >= 4 and len(c2) >= 4 and (c1 in c2 or c2 in c1):
+        return True
+
+    return False
 
 
 def normalize_bbox_dataset(data: Any, annotation_format: str, profile: dict[str, Any]) -> list[dict[str, Any]]:
@@ -198,14 +271,26 @@ def _base_bbox_frames(frames: list[dict[str, Any]], profile: dict[str, Any], gui
         compiled = guideline_manager.get_compiled_rules() if guideline_manager else {}
         geometry = compiled.get("geometry_constraints", {})
         classes, _ = _ontology(profile, sorted({l.get("category", "") for f in frames for l in f.get("labels", [])}))
-        config = {"enable_model_checks": False, "enable_aspect_heuristic": False,
-                  "allowed_classes": [c.lower() for c in classes]}
+        config = {
+            "enable_model_checks": False,
+            "enable_aspect_heuristic": False,
+            "allowed_classes": [c.lower() for c in classes],
+            "min_box_width": geometry.get("min_box_pixels") or 2.0,
+            "min_box_height": geometry.get("min_box_pixels") or 2.0,
+            "min_box_area": geometry.get("min_area_pixels") or 4.0,
+            "mandatory_attributes": compiled.get("mandatory_attributes", []),
+            "require_truncated": compiled.get("require_truncated", False),
+            "duplicate_box_iou_threshold": compiled.get("duplicate_box_iou_threshold", 0.95),
+            "mask_box_min_iou": 0,
+            "max_mask_box_drift_px": float("inf"),
+        }
         if guideline_manager and not guideline_manager.is_default:
             config.update(min_box_width=geometry.get("min_box_pixels") or 0,
                           min_box_height=geometry.get("min_box_pixels") or 0,
                           min_box_area=geometry.get("min_area_pixels") or 0,
-                          mandatory_attributes=[], require_truncated=False,
-                          duplicate_box_iou_threshold=float("inf"),
+                          mandatory_attributes=compiled.get("mandatory_attributes", []),
+                          require_truncated=compiled.get("require_truncated", False),
+                          duplicate_box_iou_threshold=compiled.get("duplicate_box_iou_threshold", float("inf")),
                           mask_box_min_iou=0, max_mask_box_drift_px=float("inf"))
         results = BDDQualityChecker(config, guideline_manager=guideline_manager).check_dataset_advanced(frames)["sorted_frames"]
         for output in results:
@@ -353,14 +438,19 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
             unmatched_yolo = list(range(len(yolo_boxes)))
             unmatched_dino = list(range(len(dino_boxes)))
 
-            # 1.1 Tìm các cặp 2 model nhận diện trùng vị trí (IoU >= 0.35)
-            # A. Trường hợp 2 model CÙNG CLASS -> Đồng thuận tuyệt đối (lấy trung bình tọa độ, max confidence)
+            # 1.1 Tìm các cặp 2 model nhận diện trùng vị trí (IoU >= 0.30 hoặc spatial match)
+            # A. Trường hợp 2 model CÙNG CLASS (hoặc cùng nhóm synonym) -> Đồng thuận tuyệt đối
             for yi in list(unmatched_yolo):
                 yb = yolo_boxes[yi]
-                d_same = [(compute_iou(tuple(yb["box"]), tuple(dino_boxes[di]["box"])), di)
-                          for di in unmatched_dino if dino_boxes[di]["category"] == yb["category"]]
+                d_same = []
+                for di in unmatched_dino:
+                    db = dino_boxes[di]
+                    same_cat = is_same_category(yb["category"], db["category"], aliases)
+                    m_ok, m_score = is_spatial_match(yb["box"], db["box"], 0.30)
+                    if same_cat and m_ok:
+                        d_same.append((m_score, di))
                 best_iou, best_di = max(d_same, default=(0.0, -1))
-                if best_iou >= 0.35 and best_di >= 0:
+                if best_di >= 0:
                     unmatched_yolo.remove(yi)
                     unmatched_dino.remove(best_di)
                     db = dino_boxes[best_di]
@@ -376,13 +466,18 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                         "type": "rectangle"
                     })
 
-            # B. Trường hợp 2 model KHÁC CLASS tại cùng vị trí (IoU >= 0.35)
+            # B. Trường hợp 2 model KHÁC CLASS tại cùng vị trí
             for yi in list(unmatched_yolo):
                 yb = yolo_boxes[yi]
-                d_diff = [(compute_iou(tuple(yb["box"]), tuple(dino_boxes[di]["box"])), di)
-                          for di in unmatched_dino if dino_boxes[di]["category"] != yb["category"]]
+                d_diff = []
+                for di in unmatched_dino:
+                    db = dino_boxes[di]
+                    same_cat = is_same_category(yb["category"], db["category"], aliases)
+                    m_ok, m_score = is_spatial_match(yb["box"], db["box"], 0.30)
+                    if not same_cat and m_ok:
+                        d_diff.append((m_score, di))
                 best_iou, best_di = max(d_diff, default=(0.0, -1))
-                if best_iou >= 0.35 and best_di >= 0:
+                if best_di >= 0:
                     unmatched_yolo.remove(yi)
                     unmatched_dino.remove(best_di)
                     db = dino_boxes[best_di]
@@ -516,35 +611,67 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
         # BƯỚC 3: "BOX CẦN REVIEW" LÀ CÁI KHÁC NHAU GIỮA CỦA NGƯỜI VÀ AI
         # =========================================================================
         matched_ai_indices = set()
+        accounted_ai_indices = set()
+        matched_gt_ids = set()
 
         for obj in gt_objects:
             gt_cat = obj["category"]
+            obj_id = str(obj.get("id", ""))
 
             # Tìm trong Box của AI:
-            # A. Trùng vị trí cùng class
-            ai_same = [(compute_iou(tuple(obj["box"]), tuple(ai_boxes[ai_i]["box"])), ai_i)
-                       for ai_i in range(len(ai_boxes))
-                       if ai_i not in matched_ai_indices and ai_boxes[ai_i]["category"] == gt_cat]
-            best_same_iou, best_same_idx = max(ai_same, default=(0.0, -1))
+            # A. Trùng vị trí cùng class (hoặc cùng nhóm synonym)
+            same_cands = []
+            for ai_i, ai_b in enumerate(ai_boxes):
+                if ai_i in matched_ai_indices:
+                    continue
+                same_cat = is_same_category(gt_cat, ai_b["category"], aliases)
+                sp_match, sp_score = is_spatial_match(obj["box"], ai_b["box"], match_iou)
+                if same_cat and sp_match:
+                    same_cands.append((sp_score, ai_i))
 
-            # B. Trùng vị trí khác class
-            ai_diff = [(compute_iou(tuple(obj["box"]), tuple(ai_boxes[ai_i]["box"])), ai_i)
-                       for ai_i in range(len(ai_boxes))
-                       if ai_i not in matched_ai_indices and ai_boxes[ai_i]["category"] != gt_cat]
-            best_diff_iou, best_diff_idx = max(ai_diff, default=(0.0, -1))
+            best_same_score, best_same_idx = max(same_cands, default=(0.0, -1))
 
-            # 3.1 Cả Người và AI đều thống nhất (Cùng vị trí, Cùng class) -> PASS TUYỆT ĐỐI!
-            if best_same_iou >= match_iou and best_same_iou >= best_diff_iou:
+            # B. Trùng vị trí khác class (xung đột class thật sự)
+            diff_cands = []
+            for ai_i, ai_b in enumerate(ai_boxes):
+                if ai_i in matched_ai_indices:
+                    continue
+                same_cat = is_same_category(gt_cat, ai_b["category"], aliases)
+                sp_match, sp_score = is_spatial_match(obj["box"], ai_b["box"], match_iou)
+                if not same_cat and sp_match:
+                    diff_cands.append((sp_score, ai_i))
+
+            best_diff_score, best_diff_idx = max(diff_cands, default=(0.0, -1))
+
+            # 3.1 Cả Người và AI đều thống nhất (Cùng vị trí, Cùng class/synonym) -> PASS TUYỆT ĐỐI!
+            if best_same_idx >= 0 and best_same_score >= best_diff_score:
                 matched_ai_indices.add(best_same_idx)
+                accounted_ai_indices.add(best_same_idx)
+                matched_gt_ids.add(obj_id)
+
+                # Đánh dấu tất cả các AI box khác cũng bao phủ đối tượng này để không bị báo "bỏ sót"
+                for ai_i, ai_b in enumerate(ai_boxes):
+                    if ai_i != best_same_idx:
+                        sp_match, _ = is_spatial_match(obj["box"], ai_b["box"], 0.20)
+                        if sp_match:
+                            accounted_ai_indices.add(ai_i)
+
+                # Khi Người và AI đã đồng thuận -> xóa các cảnh báo luật/thuộc tính heuristic cũ trên object này
+                if "errors" in result and isinstance(result["errors"], list):
+                    result["errors"] = [
+                        e for e in result["errors"]
+                        if str(e.get("object_id", "")) != obj_id or e.get("error_type") == "BOX_INVERTED"
+                    ]
                 continue
 
             # 3.2 Khác nhau về Class (Người gán một đằng, AI xác định một nẻo) -> BOX CẦN REVIEW!
-            elif best_diff_iou >= match_iou:
+            elif best_diff_idx >= 0:
                 matched_ai_indices.add(best_diff_idx)
+                accounted_ai_indices.add(best_diff_idx)
                 ai_cand = ai_boxes[best_diff_idx]
                 ai_cat = ai_cand["category"]
                 findings.append({
-                    "issue_id": f"{name}:{obj['id']}:MODEL_CLASS_DISAGREEMENT", "object_id": obj["id"], "category": gt_cat,
+                    "issue_id": f"{name}:{obj_id}:MODEL_CLASS_DISAGREEMENT", "object_id": obj_id, "category": gt_cat,
                     "severity": "HIGH", "error_type": "MODEL_CLASS_DISAGREEMENT", "qa_layer": "Hội đồng AI",
                     "component": "Hội đồng AI", "model_name": ai_cand.get("model", "Hội đồng AI"),
                     "models_flagged": sorted({m["model"] for m in model_boxes}) or ["YOLO26x", "D-FINE-X"],
@@ -559,7 +686,7 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                 if gt_cat in frame_unsupported:
                     continue
                 findings.append({
-                    "issue_id": f"{name}:{obj['id']}:ANNOTATION_NOT_CONFIRMED_BY_MODEL", "object_id": obj["id"], "category": gt_cat,
+                    "issue_id": f"{name}:{obj_id}:ANNOTATION_NOT_CONFIRMED_BY_MODEL", "object_id": obj_id, "category": gt_cat,
                     "severity": "MEDIUM", "error_type": "ANNOTATION_NOT_CONFIRMED_BY_MODEL", "qa_layer": "Hội đồng AI",
                     "component": "Hội đồng AI", "model_name": "",
                     "models_flagged": sorted({m["model"] for m in model_boxes}) or ["YOLO26x", "D-FINE-X"],
@@ -571,18 +698,31 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
 
         # 3.4 Box của AI phát hiện nhưng Người không gán (Người bỏ sót đối tượng) -> BOX CẦN REVIEW!
         for ai_i in range(len(ai_boxes)):
-            if ai_i not in matched_ai_indices:
-                ai_b = ai_boxes[ai_i]
-                findings.append({
-                    "issue_id": f"{name}:unlabeled:{ai_i}", "object_id": ai_b["id"], "category": ai_b["category"],
-                    "severity": "HIGH", "error_type": "POSSIBLE_UNLABELED_OBJECT", "qa_layer": "Hội đồng AI",
-                    "component": "Hội đồng AI", "model_name": ai_b.get("model", "Hội đồng AI"),
-                    "models_flagged": [ai_b.get("model", "Hội đồng AI")],
-                    "explanation": f"Bỏ sót đối tượng '{ai_b['category']}'.",
-                    "action": f"Bổ sung nhãn '{ai_b['category']}'.", "suggested_box": ai_b["box"],
-                    "review_status": "pending", "auto_healable": False,
-                    "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")("class", ai_b["category"]) if guideline_manager else ""
-                })
+            if ai_i in matched_ai_indices or ai_i in accounted_ai_indices:
+                continue
+            ai_b = ai_boxes[ai_i]
+            # Nếu AI box này có trùng lặp với bất kỳ box người nào thì người đã gán rồi, không thể coi là bỏ sót
+            has_gt_overlap = any(is_spatial_match(obj["box"], ai_b["box"], 0.20)[0] for obj in gt_objects)
+            if has_gt_overlap:
+                continue
+
+            findings.append({
+                "issue_id": f"{name}:unlabeled:{ai_i}", "object_id": ai_b["id"], "category": ai_b["category"],
+                "severity": "HIGH", "error_type": "POSSIBLE_UNLABELED_OBJECT", "qa_layer": "Hội đồng AI",
+                "component": "Hội đồng AI", "model_name": ai_b.get("model", "Hội đồng AI"),
+                "models_flagged": [ai_b.get("model", "Hội đồng AI")],
+                "explanation": f"Bỏ sót đối tượng '{ai_b['category']}'.",
+                "action": f"Bổ sung nhãn '{ai_b['category']}'.", "suggested_box": ai_b["box"],
+                "review_status": "pending", "auto_healable": False,
+                "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")("class", ai_b["category"]) if guideline_manager else ""
+            })
+
+        # Xóa triệt để mọi lỗi rule/metadata của các object đã được người và AI thống nhất xác nhận
+        if "errors" in result and isinstance(result["errors"], list):
+            result["errors"] = [
+                e for e in result["errors"]
+                if str(e.get("object_id", "")) not in matched_gt_ids or e.get("error_type") == "BOX_INVERTED"
+            ]
 
         result["model_predictions"] = unified_system_predictions
         result["raw_model_boxes"] = model_boxes
