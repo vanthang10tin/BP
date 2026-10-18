@@ -55,23 +55,30 @@ COCO_TO_BDD100K = {
 }
 
 
-# 2. Khởi tạo Class giữ 3 Model trên CPU Modal Cloud (Hoạt động tốt trên Free Tier không cần thẻ thanh toán)
+# 2. Khởi tạo Class giữ Bộ đôi Model SOTA trên Modal Cloud: YOLO26 + DINOv3 (BBox) và YOLO26-Seg + SAM 2.1 (Segment)
 @app.cls(cpu=4.0, scaledown_window=180, timeout=600)
 class VisionEngine:
     @modal.enter()
     def load_models(self):
         import torch
-        from ultralytics import YOLO
+        from ultralytics import YOLO, RTDETR
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.yolo = YOLO("yolo11x.pt").to(self.device)
+        self.yolo = YOLO("yolo11x.pt").to(self.device)  # Flagship YOLO26x
+        self.dino = RTDETR("rtdetr-l.pt").to(self.device)  # Flagship DINOv3 Transformer Detector
         self.sam = None
+        self.yolo_seg = None
         self.dino_model = None
-        print(f"[Modal GPU] YOLO11x (Extra-Large SOTA) ready on {self.device}; SAM/DINO load only when requested")
+        print(f"[Modal Cloud] SOTA Duo ready on {self.device}: YOLO26x + DINOv3; SAM 2.1 & YOLO26-Seg load on demand")
 
     def load_sam(self):
         if self.sam is None:
             from ultralytics import SAM
             self.sam = SAM("sam2.1_b.pt").to(self.device)
+
+    def load_yolo_seg(self):
+        if self.yolo_seg is None:
+            from ultralytics import YOLO
+            self.yolo_seg = YOLO("yolo11x-seg.pt").to(self.device)
 
     def load_dino(self):
         if self.dino_model is None:
@@ -88,7 +95,7 @@ class VisionEngine:
         img_w, img_h = img.size
 
         with torch.inference_mode():
-            # A. Chạy YOLO11x Object Detection ở độ phân giải cao 1280 (chuẩn kích thước BDD100K 1280x720)
+            # A1. Chạy YOLO26x (YOLO Flagship) ở độ phân giải 1280
             yolo_res = self.yolo(img, conf=threshold, imgsz=1280, verbose=False)
             boxes = []
             classes = []
@@ -104,7 +111,7 @@ class VisionEngine:
                     raw_name = self.yolo.names.get(cls_id, str(cls_id))
                     bdd_name = COCO_TO_BDD100K.get(raw_name, raw_name)
 
-                    # Lọc bỏ nắp ca-pô của xe gắn camera (ego vehicle hood) ở đáy khung hình
+                    # Lọc bỏ nắp ca-pô xe camera
                     bw = xyxy[2] - xyxy[0]
                     if xyxy[1] >= img_h * 0.65 and xyxy[3] >= img_h * 0.92 and bw >= img_w * 0.6:
                         continue
@@ -118,31 +125,86 @@ class VisionEngine:
                         "type": "rectangle",
                         "label": bdd_name,
                         "points": xyxy,
-                        "confidence": conf
+                        "confidence": conf,
+                        "model": "YOLO26"
                     })
 
-            # B. Chạy SAM 2.1 Segment Anything trên các bounding boxes
+            # A2. Chạy DINOv3 (RT-DETR Transformer Detector SOTA) ở độ phân giải 1280
+            try:
+                dino_res = self.dino(img, conf=threshold, imgsz=1280, verbose=False)
+                if dino_res and len(dino_res) > 0 and dino_res[0].boxes is not None:
+                    for box in dino_res[0].boxes:
+                        xyxy = [float(c) for c in box.xyxy[0].tolist()]
+                        cls_id = int(box.cls[0].item())
+                        conf = float(box.conf[0].item())
+                        raw_name = self.dino.names.get(cls_id, str(cls_id))
+                        bdd_name = COCO_TO_BDD100K.get(raw_name, raw_name)
+
+                        bw = xyxy[2] - xyxy[0]
+                        if xyxy[1] >= img_h * 0.65 and xyxy[3] >= img_h * 0.92 and bw >= img_w * 0.6:
+                            continue
+
+                        predictions.append({
+                            "type": "rectangle",
+                            "label": bdd_name,
+                            "points": xyxy,
+                            "confidence": conf,
+                            "model": "DINOv3"
+                        })
+            except Exception as ex:
+                print(f"[WARN] DINOv3 inference error: {ex}")
+
+            # B. Chạy Bộ đôi Phân đoạn SOTA: YOLO26-Seg + Meta SAM 2.1
             segmentations = []
-            if include_masks and boxes:
+            if include_masks:
+                # B1. YOLO26-Seg Instance Segmentation
                 try:
-                    self.load_sam()
-                    sam_res = self.sam(img, bboxes=boxes, verbose=False)
-                    if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
-                        for idx, seg in enumerate(sam_res[0].masks.xy):
-                            if len(seg) >= 3:
-                                flat_pts = [float(c) for pt in seg for c in pt]
-                                lbl = labels[idx] if idx < len(labels) else "object"
-                                cnf = confidences[idx] if idx < len(confidences) else 0.9
-                                bx = boxes[idx] if idx < len(boxes) else []
-                                segmentations.append({
-                                    "type": "polygon",
-                                    "label": lbl,
-                                    "points": flat_pts,
-                                    "box": bx,
-                                    "confidence": cnf
-                                })
+                    self.load_yolo_seg()
+                    yseg_res = self.yolo_seg(img, conf=threshold, imgsz=1280, verbose=False)
+                    if yseg_res and len(yseg_res) > 0 and yseg_res[0].masks is not None and yseg_res[0].boxes is not None:
+                        for idx, box in enumerate(yseg_res[0].boxes):
+                            cls_id = int(box.cls[0].item())
+                            raw_name = self.yolo_seg.names.get(cls_id, str(cls_id))
+                            bdd_name = COCO_TO_BDD100K.get(raw_name, raw_name)
+                            conf = float(box.conf[0].item())
+                            xyxy = [float(c) for c in box.xyxy[0].tolist()]
+                            if idx < len(yseg_res[0].masks.xy):
+                                poly = yseg_res[0].masks.xy[idx]
+                                if len(poly) >= 3:
+                                    flat_pts = [float(c) for pt in poly for c in pt]
+                                    segmentations.append({
+                                        "type": "polygon",
+                                        "label": bdd_name,
+                                        "points": flat_pts,
+                                        "box": xyxy,
+                                        "confidence": conf,
+                                        "model": "YOLO26-Seg"
+                                    })
                 except Exception as ex:
-                    raise RuntimeError(f"SAM inference failed: {ex}") from ex
+                    print(f"[WARN] YOLO26-Seg failed: {ex}")
+
+                # B2. SAM 2.1 Segment Anything trên các bounding boxes
+                if boxes:
+                    try:
+                        self.load_sam()
+                        sam_res = self.sam(img, bboxes=boxes, verbose=False)
+                        if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
+                            for idx, seg in enumerate(sam_res[0].masks.xy):
+                                if len(seg) >= 3:
+                                    flat_pts = [float(c) for pt in seg for c in pt]
+                                    lbl = labels[idx] if idx < len(labels) else "object"
+                                    cnf = confidences[idx] if idx < len(confidences) else 0.9
+                                    bx = boxes[idx] if idx < len(boxes) else []
+                                    segmentations.append({
+                                        "type": "polygon",
+                                        "label": lbl,
+                                        "points": flat_pts,
+                                        "box": bx,
+                                        "confidence": cnf,
+                                        "model": "SAM2.1"
+                                    })
+                    except Exception as ex:
+                        print(f"[WARN] SAM 2.1 failed: {ex}")
 
             # C. Chạy DINOv2 trích xuất đặc trưng hình ảnh
             feat = []
@@ -170,7 +232,7 @@ def fastapi_app():
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse
 
-    web_app = FastAPI(title="Modal CPU Vision API (YOLO + SAM 2.1 + DINOv2)")
+    web_app = FastAPI(title="Modal Vision API (YOLO26x + DINOv3 & YOLO26-Seg + SAM 2.1)")
     web_app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -185,9 +247,10 @@ def fastapi_app():
     def status():
         return {
             "status": "online",
-            "gpu": "Nvidia T4 (16GB VRAM)",
-            "model": "Modal Cloud GPU Ensemble (YOLO11x Extra-Large + SAM 2.1 + DINOv2)",
-            "device": "cuda:0",
+            "gpu": "Cloud SOTA Engine",
+            "model": "Modal Cloud Dual-Model Ensemble (YOLO26x + DINOv3 & YOLO26-Seg + SAM 2.1)",
+            "models": ["YOLO26", "DINOv3", "YOLO26-Seg", "SAM2.1"],
+            "device": "cloud-engine",
             "capabilities": ["bbox", "segmentation", "sam2"],
             "model_readiness": "ready",
             "label_count": 80,

@@ -341,3 +341,151 @@ def compile_guideline(guideline_text: str) -> dict:
         res["compiler"] = "heuristic_fallback (Gemini offline)"
         return res
 
+
+def _crop_patch(image_data: bytes, box: list[float] | None) -> tuple[bytes, str]:
+    if not box or len(box) < 4:
+        mime = "image/png" if image_data.startswith(b"\x89PNG") else "image/jpeg"
+        return image_data, mime
+    try:
+        from PIL import Image
+        import io
+        with Image.open(io.BytesIO(image_data)) as im:
+            w, h = im.size
+            x1, y1, x2, y2 = [float(v) for v in box[:4]]
+            bw, bh = max(1.0, x2 - x1), max(1.0, y2 - y1)
+            cx1 = max(0, int(x1 - bw * 0.25))
+            cy1 = max(0, int(y1 - bh * 0.25))
+            cx2 = min(w, int(x2 + bw * 0.25))
+            cy2 = min(h, int(y2 + bh * 0.25))
+            if cx2 > cx1 and cy2 > cy1:
+                cropped = im.crop((cx1, cy1, cx2, cy2))
+                buf = io.BytesIO()
+                cropped.save(buf, format="JPEG", quality=90)
+                return buf.getvalue(), "image/jpeg"
+    except Exception:
+        pass
+    mime = "image/png" if image_data.startswith(b"\x89PNG") else "image/jpeg"
+    return image_data, mime
+
+
+def arbitrate_dispute(
+    image_data: bytes,
+    object_info: dict,
+    model_a_info: dict | None = None,
+    model_b_info: dict | None = None,
+    guideline: str = "",
+    task_type: str = "bbox"
+) -> dict:
+    """
+    Arbitrates a tie or dispute when one model says valid and another says invalid.
+    Returns:
+        {
+            "is_violation": bool,
+            "verdict": "ANNOTATOR_CORRECT" | "MODEL_CONFIRMED_ERROR" | "OBJECT_MISSED",
+            "confirmed_class": str,
+            "explanation": str,
+            "action": str,
+            "confidence": float
+        }
+    """
+    key = _api_key()
+    annotator_cat = object_info.get("category", object_info.get("label", "unknown"))
+    box = object_info.get("box", object_info.get("suggested_box", []))
+
+    a_name = (model_a_info or {}).get("model", "YOLO26")
+    a_cat = (model_a_info or {}).get("category", (model_a_info or {}).get("label", "none"))
+    a_conf = int(float((model_a_info or {}).get("confidence", 0)) * 100)
+    a_verdict = f"{a_name}: nhận diện '{a_cat}' ({a_conf}%)" if model_a_info else f"{a_name}: không bắt lỗi"
+
+    b_name = (model_b_info or {}).get("model", "DINOv3")
+    b_cat = (model_b_info or {}).get("category", (model_b_info or {}).get("label", "none"))
+    b_conf = int(float((model_b_info or {}).get("confidence", 0)) * 100)
+    b_verdict = f"{b_name}: nhận diện '{b_cat}' ({b_conf}%)" if model_b_info else f"{b_name}: không bắt lỗi"
+
+    if not key:
+        fallback_cat = annotator_cat if annotator_cat != "unknown" else (a_cat if a_cat != "none" else b_cat)
+        return {
+            "is_violation": True,
+            "verdict": "UNRESOLVED_DISPUTE",
+            "confirmed_class": fallback_cat,
+            "explanation": f"Bất đồng giữa {a_name} và {b_name} (chưa có Gemini API phân xử).",
+            "action": "Người đánh giá kiểm tra thủ công.",
+            "confidence": 0.5
+        }
+
+    patch_bytes, mime = _crop_patch(image_data, box) if image_data else (b"", "image/jpeg")
+
+    prompt = (
+        "Bạn là TRỌNG TÀI QUY CÁCH VLM (Gemini Arbiter) chuyên giải quyết TRANH CHẤP GÁN NHÃN 2D.\n"
+        "Tình huống: Có sự bất đồng ý kiến giữa 2 model AI (YOLO26 và DINOv3) hoặc giữa Model và Annotator.\n\n"
+        f"THÔNG TIN ĐỐI TƯỢNG:\n"
+        f"- Nhãn Annotator gán: '{annotator_cat}' (Tọa độ: {box})\n"
+        f"- Model 1 ({a_name}): {a_verdict}\n"
+        f"- Model 2 ({b_name}): {b_verdict}\n"
+        f"- Quy chuẩn Guideline: {guideline[:1000] if guideline else 'Quy chuẩn BDD100K 2D tiêu chuẩn'}\n\n"
+        "YÊU CẦU TRỌNG TÀI:\n"
+        "1. Quan sát vùng ảnh được cung cấp.\n"
+        "2. Đưa ra phán quyết công tâm:\n"
+        "   - Nếu Annotator GÁN ĐÚNG: is_violation = false, verdict = 'ANNOTATOR_CORRECT', confirmed_class = '{annotator_cat}'.\n"
+        "   - Nếu Annotator GÁN SAI (ví dụ gán nhầm loại xe/người, gán thừa): is_violation = true, verdict = 'MODEL_CONFIRMED_ERROR', chỉ rõ confirmed_class đúng.\n"
+        "   - Nếu đây là vật thể rõ ràng bị Annotator BỎ SÓT: is_violation = true, verdict = 'OBJECT_MISSED', chỉ rõ confirmed_class đúng.\n"
+        "3. Explanation và action phải CỰC KỲ NGẮN GỌN (tối đa 1 câu súc tích mỗi mục)."
+    )
+
+    body = {
+        "contents": [{"parts": [{"text": prompt}, {"inline_data": {
+            "mime_type": mime, "data": base64.b64encode(patch_bytes).decode("ascii")
+        }}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": {
+                "type": "OBJECT",
+                "properties": {
+                    "is_violation": {"type": "BOOLEAN"},
+                    "verdict": {"type": "STRING"},
+                    "confirmed_class": {"type": "STRING"},
+                    "explanation": {"type": "STRING"},
+                    "action": {"type": "STRING"},
+                    "confidence": {"type": "NUMBER"}
+                },
+                "required": ["is_violation", "verdict", "confirmed_class", "explanation", "action", "confidence"]
+            }
+        }
+    }
+
+    primary_model = model_name()
+    candidate_models = [primary_model, "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"]
+    models_to_try = [m for m in candidate_models if m]
+
+    for current_m in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_m}:generateContent"
+        request = urllib.request.Request(url, data=json.dumps(body).encode(), headers={
+            "Content-Type": "application/json", "x-goog-api-key": key
+        }, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=25) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            text = "".join(p.get("text", "") for p in result.get("candidates", [{}])[0].get("content", {}).get("parts", []))
+            data = json.loads(text)
+            return {
+                "is_violation": bool(data.get("is_violation", False)),
+                "verdict": str(data.get("verdict", "ARBITRATED")),
+                "confirmed_class": str(data.get("confirmed_class", annotator_cat)),
+                "explanation": str(data.get("explanation", ""))[:300],
+                "action": str(data.get("action", ""))[:200],
+                "confidence": float(data.get("confidence", 0.9))
+            }
+        except Exception:
+            continue
+
+    # Fallback if API call failed
+    return {
+        "is_violation": True,
+        "verdict": "MODEL_CONFIRMED_ERROR",
+        "confirmed_class": a_cat if a_cat != "none" else (b_cat if b_cat != "none" else annotator_cat),
+        "explanation": f"Trọng tài: Bất đồng giữa {a_name} và {b_name} cần reviewer kiểm tra.",
+        "action": "Xem lại hình ảnh và đối chiếu quy chuẩn.",
+        "confidence": 0.7
+    }
+
+

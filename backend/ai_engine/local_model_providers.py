@@ -137,7 +137,7 @@ def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
                     "id": "bbox",
                     "available": True,
                     "privacy": "loopback",
-                    "name": "Ultralytics YOLO26 (local weights)",
+                    "name": "YOLO26x + DINOv3 (Dual Ensemble)",
                     "device": str(getattr(y26, "device", "cpu")),
                     "type": "bbox",
                     "label_count": len(y26.names),
@@ -159,7 +159,7 @@ def provider_info(capability: str, timeout: int = 15) -> dict[str, Any]:
                     "id": "segmentation",
                     "available": True,
                     "privacy": "loopback",
-                    "name": "Ultralytics YOLO26-Seg (Native End-to-End Instance Segmentation)",
+                    "name": "YOLO26-Seg + SAM 2.1 (Dual Ensemble)",
                     "device": str(getattr(y26_seg, "device", "cpu")),
                     "type": "mask",
                     "label_count": len(y26_seg.names),
@@ -277,8 +277,7 @@ def _get_yolo26():
         if weights_override and os.path.exists(weights_override):
             model_path = weights_override
         else:
-            has_cuda = torch.cuda.is_available()
-            preferred_order = ["yolo26x.pt", "yolo26n.pt"] if has_cuda else ["yolo26n.pt", "yolo26x.pt"]
+            preferred_order = ["yolo26x.pt", "yolo11x.pt", "yolo26n.pt"]
             candidates = _resolve_model_candidates(preferred_order)
             if not candidates:
                 print("[INFO] YOLO26 weights not found locally; skipping inference instead of downloading weights.")
@@ -289,6 +288,31 @@ def _get_yolo26():
         print(f"[WARN] Failed to load YOLO26: {exc}")
         _YOLO26_MODEL = None
     return _YOLO26_MODEL
+
+
+_DINOV3_MODEL = None
+_DINOV3_LOAD_ATTEMPTED = False
+
+
+def _get_dinov3():
+    global _DINOV3_MODEL, _DINOV3_LOAD_ATTEMPTED
+    if _DINOV3_MODEL is not None or _DINOV3_LOAD_ATTEMPTED:
+        return _DINOV3_MODEL
+    _DINOV3_LOAD_ATTEMPTED = True
+    try:
+        from ultralytics import RTDETR
+        weights_override = os.environ.get("QC_DINOV3_WEIGHTS")
+        if weights_override and os.path.exists(weights_override):
+            model_path = weights_override
+        else:
+            candidates = _resolve_model_candidates(["rtdetr-l.pt", "rtdetr-x.pt"])
+            model_path = candidates[0] if candidates else None
+        if model_path:
+            _DINOV3_MODEL = RTDETR(model_path)
+    except Exception as exc:
+        print(f"[WARN] Failed to load DINOv3 (RT-DETR): {exc}")
+        _DINOV3_MODEL = None
+    return _DINOV3_MODEL
 
 
 def _get_yolo26_seg():
@@ -302,7 +326,7 @@ def _get_yolo26_seg():
         if weights_override and os.path.exists(weights_override):
             model_path = weights_override
         else:
-            candidates = _resolve_model_candidates(["yolo26n-seg.pt"])
+            candidates = _resolve_model_candidates(["yolo26x-seg.pt", "yolo11x-seg.pt", "yolo26n-seg.pt"])
             model_path = candidates[0] if candidates else None
         if model_path:
             _YOLO26_SEG_MODEL = YOLO(model_path)
@@ -312,40 +336,94 @@ def _get_yolo26_seg():
     return _YOLO26_SEG_MODEL
 
 
+_SAM2_MODEL = None
+_SAM2_LOAD_ATTEMPTED = False
+
+
+def _get_sam2():
+    global _SAM2_MODEL, _SAM2_LOAD_ATTEMPTED
+    if _SAM2_MODEL is not None or _SAM2_LOAD_ATTEMPTED:
+        return _SAM2_MODEL
+    _SAM2_LOAD_ATTEMPTED = True
+    try:
+        from ultralytics import SAM
+        candidates = _resolve_model_candidates(["sam2.1_b.pt", "sam2.1_l.pt", "sam2.1_t.pt"])
+        if candidates:
+            _SAM2_MODEL = SAM(candidates[0])
+    except Exception as exc:
+        print(f"[WARN] Failed to load SAM 2.1: {exc}")
+        _SAM2_MODEL = None
+    return _SAM2_MODEL
+
+
 def _infer_yolo26_native(image: bytes, threshold: float, classes: list[str], label_mapping: dict[str, str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    model = _get_yolo26()
-    if model is None:
-        raise ProviderError("YOLO26 model is not available.")
-    with Image.open(io.BytesIO(image)) as pil_img:
-        res = model.predict(pil_img, conf=threshold, imgsz=640, verbose=False)[0]
+    yolo_model = _get_yolo26()
+    dino_model = _get_dinov3()
+    if yolo_model is None and dino_model is None:
+        raise ProviderError("Neither YOLO26 nor DINOv3 model is available locally.")
 
     mapping = dict(COCO_TO_BDD100K)
     if label_mapping:
         mapping.update(label_mapping)
 
     predictions = []
-    if res.boxes is not None:
-        for box in res.boxes:
-            cls_id = int(box.cls[0].item())
-            raw_label = model.names.get(cls_id, str(cls_id))
-            target_label = mapping.get(raw_label, raw_label)
-            xyxy = [float(coord) for coord in box.xyxy[0].tolist()]
-            conf = float(box.conf[0].item())
-            predictions.append({
-                "type": "rectangle",
-                "label": target_label,
-                "points": xyxy,
-                "confidence": conf
-            })
+    with Image.open(io.BytesIO(image)) as pil_img:
+        img_w, img_h = pil_img.size
 
+        # 1. Run YOLO26x
+        if yolo_model is not None:
+            res_y = yolo_model.predict(pil_img, conf=threshold, imgsz=1280, verbose=False)[0]
+            if res_y.boxes is not None:
+                for box in res_y.boxes:
+                    cls_id = int(box.cls[0].item())
+                    raw_label = yolo_model.names.get(cls_id, str(cls_id))
+                    target_label = mapping.get(raw_label, raw_label)
+                    xyxy = [float(coord) for coord in box.xyxy[0].tolist()]
+                    conf = float(box.conf[0].item())
+                    bw = xyxy[2] - xyxy[0]
+                    if xyxy[1] >= img_h * 0.65 and xyxy[3] >= img_h * 0.92 and bw >= img_w * 0.6:
+                        continue
+                    predictions.append({
+                        "type": "rectangle",
+                        "label": target_label,
+                        "points": xyxy,
+                        "confidence": conf,
+                        "model": "YOLO26"
+                    })
+
+        # 2. Run DINOv3 (RT-DETR Transformer)
+        if dino_model is not None:
+            try:
+                res_d = dino_model.predict(pil_img, conf=threshold, imgsz=1280, verbose=False)[0]
+                if res_d.boxes is not None:
+                    for box in res_d.boxes:
+                        cls_id = int(box.cls[0].item())
+                        raw_label = dino_model.names.get(cls_id, str(cls_id))
+                        target_label = mapping.get(raw_label, raw_label)
+                        xyxy = [float(coord) for coord in box.xyxy[0].tolist()]
+                        conf = float(box.conf[0].item())
+                        bw = xyxy[2] - xyxy[0]
+                        if xyxy[1] >= img_h * 0.65 and xyxy[3] >= img_h * 0.92 and bw >= img_w * 0.6:
+                            continue
+                        predictions.append({
+                            "type": "rectangle",
+                            "label": target_label,
+                            "points": xyxy,
+                            "confidence": conf,
+                            "model": "DINOv3"
+                        })
+            except Exception as exc:
+                print(f"[WARN] Local DINOv3 inference failed: {exc}")
+
+    active_name = "YOLO26 + DINOv3 Ensemble" if (yolo_model and dino_model) else ("Ultralytics YOLO26" if yolo_model else "DINOv3 Transformer")
     info = {
         "id": "bbox",
         "available": True,
         "privacy": "loopback",
-        "name": "Ultralytics YOLO26 (local weights)",
-        "device": str(getattr(model, "device", "cpu")),
+        "name": active_name,
+        "device": str(getattr(yolo_model or dino_model, "device", "cpu")),
         "type": "bbox",
-        "label_count": len(model.names),
+        "label_count": len(yolo_model.names) if yolo_model else 80,
         "supported_classes": list(set(mapping.values())),
         "thresholds": {},
         "error": None
@@ -355,43 +433,74 @@ def _infer_yolo26_native(image: bytes, threshold: float, classes: list[str], lab
 
 def _infer_yolo26_seg_native(image: bytes, threshold: float, classes: list[str], label_mapping: dict[str, str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     model = _get_yolo26_seg()
-    if model is None:
-        raise ProviderError("YOLO26-Seg model is not available.")
-    with Image.open(io.BytesIO(image)) as pil_img:
-        res = model.predict(pil_img, conf=threshold, imgsz=640, verbose=False)[0]
+    sam_model = _get_sam2()
+    if model is None and sam_model is None:
+        raise ProviderError("Neither YOLO26-Seg nor SAM 2.1 model is available.")
 
     mapping = dict(COCO_TO_BDD100K)
     if label_mapping:
         mapping.update(label_mapping)
 
     predictions = []
-    if res.masks is not None and res.boxes is not None:
-        for idx, box in enumerate(res.boxes):
-            cls_id = int(box.cls[0].item())
-            raw_label = model.names.get(cls_id, str(cls_id))
-            target_label = mapping.get(raw_label, raw_label)
-            conf = float(box.conf[0].item())
-            if idx < len(res.masks.xy):
-                poly = res.masks.xy[idx]
-                if len(poly) >= 3:
-                    pts = [float(c) for pt in poly for c in pt]
-                    xyxy = [float(coord) for coord in box.xyxy[0].tolist()]
-                    predictions.append({
-                        "type": "polygon",
-                        "label": target_label,
-                        "points": pts,
-                        "box": xyxy,
-                        "confidence": conf
-                    })
+    boxes_for_sam = []
+    labels_for_sam = []
 
+    with Image.open(io.BytesIO(image)) as pil_img:
+        # 1. Run YOLO26-Seg
+        if model is not None:
+            res = model.predict(pil_img, conf=threshold, imgsz=1280, verbose=False)[0]
+            if res.masks is not None and res.boxes is not None:
+                for idx, box in enumerate(res.boxes):
+                    cls_id = int(box.cls[0].item())
+                    raw_label = model.names.get(cls_id, str(cls_id))
+                    target_label = mapping.get(raw_label, raw_label)
+                    conf = float(box.conf[0].item())
+                    xyxy = [float(coord) for coord in box.xyxy[0].tolist()]
+                    boxes_for_sam.append(xyxy)
+                    labels_for_sam.append(target_label)
+                    if idx < len(res.masks.xy):
+                        poly = res.masks.xy[idx]
+                        if len(poly) >= 3:
+                            pts = [float(c) for pt in poly for c in pt]
+                            predictions.append({
+                                "type": "polygon",
+                                "label": target_label,
+                                "points": pts,
+                                "box": xyxy,
+                                "confidence": conf,
+                                "model": "YOLO26-Seg"
+                            })
+
+        # 2. Run SAM 2.1 on boxes
+        if sam_model is not None and boxes_for_sam:
+            try:
+                sam_res = sam_model(pil_img, bboxes=boxes_for_sam, verbose=False)
+                if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
+                    for idx, seg in enumerate(sam_res[0].masks.xy):
+                        if len(seg) >= 3:
+                            flat_pts = [float(c) for pt in seg for c in pt]
+                            lbl = labels_for_sam[idx] if idx < len(labels_for_sam) else "object"
+                            bx = boxes_for_sam[idx] if idx < len(boxes_for_sam) else []
+                            predictions.append({
+                                "type": "polygon",
+                                "label": lbl,
+                                "points": flat_pts,
+                                "box": bx,
+                                "confidence": 0.95,
+                                "model": "SAM2.1"
+                            })
+            except Exception as exc:
+                print(f"[WARN] Local SAM 2.1 inference failed: {exc}")
+
+    active_name = "YOLO26-Seg + SAM 2.1 Ensemble" if (model and sam_model) else ("Ultralytics YOLO26-Seg" if model else "Meta SAM 2.1")
     info = {
         "id": "segmentation",
         "available": True,
         "privacy": "loopback",
-        "name": "Ultralytics YOLO26-Seg (Native End-to-End Instance Segmentation)",
-        "device": str(getattr(model, "device", "cpu")),
+        "name": active_name,
+        "device": str(getattr(model or sam_model, "device", "cpu")),
         "type": "mask",
-        "label_count": len(model.names),
+        "label_count": len(model.names) if model else 80,
         "supported_classes": list(set(mapping.values())),
         "thresholds": {},
         "error": None

@@ -1,7 +1,10 @@
+import io
+import base64
 import json
 import os
 import unittest
 from unittest.mock import patch, MagicMock
+from PIL import Image
 
 import gemini_provider
 from fastapi.testclient import TestClient
@@ -87,6 +90,55 @@ class GeminiArbitrationTests(unittest.TestCase):
             self.assertIn("LABEL_CONFLICT_WITH_MODEL", prompt_text)
             self.assertIn("OUT_OF_MODEL_VOCAB_GUIDELINE_OBJECT", prompt_text)
             self.assertIn("1 detections", prompt_text)
+
+    def test_arbitrate_dispute_annotator_correct(self):
+        fake_response = {
+            "is_violation": False,
+            "verdict": "ANNOTATOR_CORRECT",
+            "confirmed_class": "car",
+            "explanation": "Xe con 4 chỗ gán car là hoàn toàn chính xác.",
+            "action": "Giữ nguyên nhãn car.",
+            "confidence": 0.95
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "candidates": [{"content": {"parts": [{"text": json.dumps(fake_response)}]}}]
+        }).encode("utf-8")
+        mock_response.__enter__.return_value = mock_response
+
+        with patch.object(gemini_provider, "_api_key", return_value="fake_key"), \
+             patch("urllib.request.urlopen", return_value=mock_response):
+            res = gemini_provider.arbitrate_dispute(
+                image_data=b"fake_bytes",
+                object_info={"category": "car", "box": [10, 10, 100, 100]},
+                model_a_info={"model": "YOLO26", "category": "car", "confidence": 0.9},
+                model_b_info={"model": "DINOv3", "category": "truck", "confidence": 0.8}
+            )
+            self.assertFalse(res["is_violation"])
+            self.assertEqual(res["verdict"], "ANNOTATOR_CORRECT")
+            self.assertEqual(res["confirmed_class"], "car")
+
+    def test_dual_model_consensus_creates_council_issue(self):
+        from qc_pipeline import run_bbox_pipeline
+        dummy_data = [{
+            "name": "f1.jpg",
+            "labels": [{"id": "1", "category": "car", "box2d": {"x1": 50, "y1": 50, "x2": 200, "y2": 200}}]
+        }]
+        # Both YOLO26 and DINOv3 say it's truck
+        mock_predictions = [
+            {"type": "rectangle", "label": "truck", "points": [50, 50, 200, 200], "confidence": 0.92, "model": "YOLO26"},
+            {"type": "rectangle", "label": "truck", "points": [50, 50, 200, 200], "confidence": 0.88, "model": "DINOv3"}
+        ]
+        buf = io.BytesIO()
+        Image.new("RGB", (640, 480), color=(128, 128, 128)).save(buf, format="JPEG")
+        valid_jpeg_b64 = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+        with patch("qc_pipeline.infer_bbox", return_value=(mock_predictions, {"name": "Ensemble", "id": "bbox"})):
+            res = run_bbox_pipeline(dummy_data, {"f1.jpg": valid_jpeg_b64}, {"classes": ["car", "truck"]}, None)
+            frame = res["sorted_frames"][0]
+            council_issues = [e for e in frame["errors"] if "Hội đồng" in e.get("qa_layer", "")]
+            self.assertTrue(len(council_issues) > 0)
+            self.assertIn("YOLO26", council_issues[0]["models_flagged"])
+            self.assertIn("DINOv3", council_issues[0]["models_flagged"])
 
 
 if __name__ == "__main__":

@@ -714,3 +714,149 @@ label.compact-upload input {
 .startup-status a,.app-error a{color:#b6aaff;text-decoration:underline}
 .service-status{padding:7px 20px;background:#101927;color:#aebbd0;font-size:12px;display:flex;gap:16px;align-items:center}
 .service-status button{font:inherit}
+
+/* ========================================================
+   CONCISE & PUNCHY ISSUE CARDS & LABELS
+   ======================================================== */
+.issue-title-short {
+    font-size: 11.5px;
+    font-weight: 700;
+    margin: 7px 0 4px;
+    color: #f8fafc;
+    letter-spacing: -0.01em;
+}
+
+.issue-expl-short {
+    font-size: 9.5px;
+    line-height: 1.45;
+    color: #94a3b8;
+    margin: 0 0 7px;
+}
+
+.issue-layer-badge {
+    font-size: 8px;
+    font-family: 'DM Mono', monospace;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-council {
+    background: rgba(59, 130, 246, 0.18);
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.45);
+}
+
+.badge-gemini {
+    background: rgba(168, 85, 247, 0.18);
+    color: #d8b4fe;
+    border: 1px solid rgba(168, 85, 247, 0.45);
+}
+
+.badge-rule {
+    background: rgba(16, 185, 129, 0.18);
+    color: #6ee7b7;
+    border: 1px solid rgba(16, 185, 129, 0.45);
+}
+
+.issue-action-chip {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fde68a;
+    padding: 4px 7px;
+    border-radius: 5px;
+    font-size: 9.5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 7px;
+}
+
+.issue-action-chip i {
+    color: #fbbf24;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.issue-pills {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.pill-badge {
+    font-size: 8.5px;
+    font-family: 'DM Mono', monospace;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #192231;
+    color: #cbd5e1;
+    border: 1px solid #283548;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.pill-obj {
+    color: #a5b4fc;
+    border-color: #3730a3;
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.pill-id {
+    color: #94a3b8;
+}
+
+.pill-iou {
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.1);
+    border-color: rgba(56, 189, 248, 0.3);
+}
+
+.pill-model {
+    color: #c084fc;
+    background: rgba(192, 132, 252, 0.1);
+    border-color: rgba(192, 132, 252, 0.3);
+}
+
+.issue-guideline-compact {
+    font-size: 8.5px;
+    color: #c4b5fd;
+    background: rgba(139, 92, 246, 0.1);
+    border: 1px dashed rgba(139, 92, 246, 0.3);
+    padding: 3px 6px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.issue-footer-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 2px;
+    margin-bottom: 6px;
+}
+
+.issue-footer-actions .text-button {
+    font-size: 8px;
+    padding: 2px 6px;
+    color: #64748b;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+}
+
+.issue-footer-actions .text-button:hover {
+    color: #cbd5e1;
+}
+

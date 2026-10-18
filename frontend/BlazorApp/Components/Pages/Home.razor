@@ -332,7 +332,7 @@
                                                             {
                                                                 <foreignObject x="@predBox.Value.X" y="@predBox.Value.Y" width="190" height="22">
                                                                     <div class="@(isAccepted ? "label-text" : "model-label")">
-                                                                        @(isAccepted ? "✓ accepted · " : $"{GetString(item, "model", "Model AI")} · ")@GetString(item, "category", "object")
+                                                                        @(isAccepted ? "✓ " : $"{FormatModelShortName(GetString(item, "model", "AI"))}: ")@GetString(item, "category", "object")
                                                                     </div>
                                                                 </foreignObject>
                                                             }
@@ -413,31 +413,47 @@
                                                  @onclick="() => SelectIssue(issue)">
                                             <div class="issue-top">
                                                 <span class="severity-tag sev-@severity.ToLowerInvariant()">@severity</span>
-                                                <span class="issue-layer">@GetString(issue, "qa_layer", "QC")</span>
-                                            </div>
-                                            <h3>@Humanize(GetString(issue, "error_type", "Issue"))</h3>
-                                            <p>@GetString(issue, "explanation", "No explanation provided.")</p>
-                                            <div class="issue-object">
-                                                <i class="bi bi-bounding-box"></i> @GetString(issue, "category", "Object") <span>·</span> ID: @GetString(issue, "object_id", "—")
-                                            </div>
-                                            @if (GetString(issue, "iou", "") is var iou && iou.Length > 0)
-                                            {
-                                                <div class="issue-rule"><small>MASK IoU / THRESHOLD</small><span>@iou / @GetString(issue, "review_threshold", "workspace setting")</span></div>
-                                            }
-                                            <div class="issue-rule">
-                                                <small>GUIDELINE REFERENCE</small>
-                                                <span>@GetString(issue, "guideline_rule", "Review against team guideline")</span>
-                                            </div>
-                                            <div class="issue-footer">
-                                                @if (!string.IsNullOrWhiteSpace(GetString(issue, "model_name", "")))
+                                                @if (GetString(issue, "qa_layer", "").Contains("Hội đồng"))
                                                 {
-                                                    <span><i class="bi bi-cpu"></i> @GetString(issue, "model_name", "")</span>
+                                                    <span class="issue-layer-badge badge-council"><i class="bi bi-people-fill"></i> Hội đồng AI</span>
+                                                }
+                                                else if (GetString(issue, "qa_layer", "").Contains("Gemini") || GetString(issue, "error_type", "") == "GEMINI_ARBITRATED_DISPUTE")
+                                                {
+                                                    <span class="issue-layer-badge badge-gemini"><i class="bi bi-stars"></i> Trọng tài Gemini</span>
                                                 }
                                                 else
                                                 {
-                                                    <span><i class="bi bi-shield-check"></i> @GetString(issue, "qa_layer", "Tầng 1 (Luật)")</span>
+                                                    <span class="issue-layer-badge badge-rule"><i class="bi bi-shield-check"></i> Luật</span>
                                                 }
-                                                <button class="text-button" @onclick="() => CopyIssue(issue)" @onclick:stopPropagation="true">Copy note</button>
+                                            </div>
+                                            <h3 class="issue-title-short">@FormatIssueTitle(issue)</h3>
+                                            <p class="issue-expl-short">@FormatCleanExplanation(issue)</p>
+                                            @if (!string.IsNullOrWhiteSpace(GetString(issue, "action", "")))
+                                            {
+                                                <div class="issue-action-chip">
+                                                    <i class="bi bi-lightbulb-fill"></i> <span>@GetString(issue, "action", "")</span>
+                                                </div>
+                                            }
+                                            <div class="issue-pills">
+                                                <span class="pill-badge pill-obj"><i class="bi bi-bounding-box"></i> @GetString(issue, "category", "Object")</span>
+                                                <span class="pill-badge pill-id">#@GetString(issue, "object_id", "—")</span>
+                                                @if (GetString(issue, "iou", "") is var iou && !string.IsNullOrEmpty(iou))
+                                                {
+                                                    <span class="pill-badge pill-iou">IoU: @iou</span>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(GetString(issue, "model_name", "")))
+                                                {
+                                                    <span class="pill-badge pill-model"><i class="bi bi-cpu"></i> @FormatModelShortName(GetString(issue, "model_name", ""))</span>
+                                                }
+                                            </div>
+                                            @if (GetString(issue, "guideline_rule", "") is var gRule && !string.IsNullOrWhiteSpace(gRule) && !gRule.Contains("Review against team guideline") && !gRule.Contains("Review against standard dataset rules"))
+                                            {
+                                                <div class="issue-guideline-compact">
+                                                    <i class="bi bi-journal-bookmark"></i> <span>@gRule</span>
+                                                </div>
+                                            }
+                                            <div class="issue-footer-actions">
+                                                <button class="text-button" @onclick="() => CopyIssue(issue)" @onclick:stopPropagation="true"><i class="bi bi-clipboard"></i> Copy</button>
                                             </div>
 
                                             <!-- Nút bấm Acp / Reject thực thi trực tiếp gắn với box -->
@@ -1791,6 +1807,59 @@
     private async Task DownloadBytes(string name, byte[] bytes, string type) => await JS.InvokeVoidAsync("qcDownload", name, type, Convert.ToBase64String(bytes));
     private string? GetImageUrl(string frame) => ImageFiles.TryGetValue(frame, out var data) ? data : ApiOnline ? Navigation.ToAbsoluteUri($"qc-image/{Uri.EscapeDataString(frame)}").ToString() : null;
     private static string Humanize(string value) => System.Text.RegularExpressions.Regex.Replace(value.Replace('_', ' ').ToLowerInvariant(), @"\b\w", m => m.Value.ToUpperInvariant());
+    private static string FormatIssueTitle(JsonElement issue)
+    {
+        var err = GetString(issue, "error_type", "Issue");
+        var cat = GetString(issue, "category", "vật thể").Trim();
+        var act = GetString(issue, "action", "");
+        
+        return err switch
+        {
+            "POSSIBLE_UNLABELED_OBJECT" => $"BỎ SÓT: {cat}",
+            "MODEL_CLASS_DISAGREEMENT" => ExtractClassDisagreement(cat, act),
+            "GEMINI_ARBITRATED_DISPUTE" => $"TRỌNG TÀI GEMINI: {cat}",
+            "SEGMENTATION_CONSENSUS_ERROR" => $"LỆCH MASK: {cat}",
+            "ANNOTATION_NOT_CONFIRMED_BY_MODEL" => $"NGHI THỪA: {cat}",
+            "DUPLICATE_BOUNDING_BOX" => $"TRÙNG BOX: {cat}",
+            "BOX_OUT_OF_BOUNDS" => $"TRÀN KHUNG: {cat}",
+            "BOX_INVERTED" => $"NGHỊCH TOẠ ĐỘ: {cat}",
+            "BOX_TOO_SMALL" => $"QUÁ NHỎ: {cat}",
+            "BOX_DEGENERATE" => $"DỊ DẠNG: {cat}",
+            "UNEXPECTED_CATEGORY" => $"CLASS LẠ: {cat}",
+            "OCCLUDED_MISMATCH" => $"LỆCH CHE KHUẤT: {cat}",
+            "TRUNCATED_MISMATCH" => $"LỆCH CẮT VIỀN: {cat}",
+            _ => $"{Humanize(err)}: {cat}"
+        };
+    }
+    private static string ExtractClassDisagreement(string currentCat, string action)
+    {
+        if (!string.IsNullOrEmpty(action))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(action, @"['""]([^'""]+)['""]");
+            if (match.Success && !string.Equals(match.Groups[1].Value, currentCat, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"SAI CLASS: {currentCat} → {match.Groups[1].Value}";
+            }
+        }
+        return $"SAI CLASS: {currentCat}";
+    }
+    private static string FormatCleanExplanation(JsonElement issue)
+    {
+        var expl = GetString(issue, "explanation", "");
+        if (string.IsNullOrWhiteSpace(expl)) return "Không có mô tả.";
+        expl = System.Text.RegularExpressions.Regex.Replace(expl, @"^(Hội đồng:\s*|\[Trọng tài Gemini\]\s*)", "");
+        return expl;
+    }
+    private static string FormatModelShortName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "AI";
+        if (raw.Contains("YOLO26-Seg", StringComparison.OrdinalIgnoreCase)) return "YOLO26-Seg";
+        if (raw.Contains("SAM2", StringComparison.OrdinalIgnoreCase)) return "SAM2.1";
+        if (raw.Contains("DINO", StringComparison.OrdinalIgnoreCase)) return "DINOv3";
+        if (raw.Contains("YOLO", StringComparison.OrdinalIgnoreCase)) return "YOLO26";
+        if (raw.Contains("Gemini", StringComparison.OrdinalIgnoreCase)) return "Gemini";
+        return raw;
+    }
     private static string GetString(JsonElement element, string property, string fallback)
     {
         if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(property, out var value)) return fallback;
