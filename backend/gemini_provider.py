@@ -56,7 +56,7 @@ def configured() -> bool:
 
 
 def model_name() -> str:
-    return os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite").strip() or "gemini-3.1-flash-lite"
+    return os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
 
 
 def inspect_frame(
@@ -497,16 +497,20 @@ def _crop_patch(image_data: bytes, box: list[float] | None) -> tuple[bytes, str]
         import io
         with Image.open(io.BytesIO(image_data)) as im:
             w, h = im.size
-            x1, y1, x2, y2 = [float(v) for v in box[:4]]
+            raw_coords = [float(v) for v in box[:4]]
+            x1, x2 = min(raw_coords[0], raw_coords[2]), max(raw_coords[0], raw_coords[2])
+            y1, y2 = min(raw_coords[1], raw_coords[3]), max(raw_coords[1], raw_coords[3])
             bw, bh = max(1.0, x2 - x1), max(1.0, y2 - y1)
-            cx1 = max(0, int(x1 - bw * 0.25))
-            cy1 = max(0, int(y1 - bh * 0.25))
-            cx2 = min(w, int(x2 + bw * 0.25))
-            cy2 = min(h, int(y2 + bh * 0.25))
+            pad_w = max(bw * 0.35, 16.0)
+            pad_h = max(bh * 0.35, 16.0)
+            cx1 = max(0, int(x1 - pad_w))
+            cy1 = max(0, int(y1 - pad_h))
+            cx2 = min(w, int(x2 + pad_w))
+            cy2 = min(h, int(y2 + pad_h))
             if cx2 > cx1 and cy2 > cy1:
                 cropped = im.crop((cx1, cy1, cx2, cy2))
                 buf = io.BytesIO()
-                cropped.save(buf, format="JPEG", quality=90)
+                cropped.save(buf, format="JPEG", quality=92)
                 return buf.getvalue(), "image/jpeg"
     except Exception:
         pass
@@ -521,6 +525,56 @@ def _unresolved_dispute(reason: str) -> dict:
         "explanation": reason, "action": "Cần reviewer phân xử.",
         "requires_review": True,
     }
+
+
+def _normalize_raw_gemini_arbitration(data: dict, annotator_cat: str) -> dict:
+    if not isinstance(data, dict):
+        return data
+    d = dict(data)
+    raw_v = str(d.get("verdict", "")).strip().upper()
+
+    if raw_v in ("ANNOTATOR_CORRECT", "VALID", "CORRECT", "KEEP", "PASS", "NO_VIOLATION", "TRUE"):
+        d["verdict"] = "ANNOTATOR_CORRECT"
+        d["is_violation"] = False
+    elif raw_v in ("MODEL_CONFIRMED_ERROR", "ERROR", "WRONG", "WRONG_CLASS", "VIOLATION", "LABEL_ERROR"):
+        d["verdict"] = "MODEL_CONFIRMED_ERROR"
+        d["is_violation"] = True
+    elif raw_v in ("OBJECT_MISSED", "MISSED", "MISSING", "MISSING_OBJECT"):
+        d["verdict"] = "OBJECT_MISSED"
+        d["is_violation"] = True
+    elif raw_v in ("UNRESOLVED_DISPUTE", "UNCERTAIN", "UNKNOWN", "NOT_SURE", "CANNOT_DECIDE"):
+        d["verdict"] = "UNRESOLVED_DISPUTE"
+        d["is_violation"] = False
+    elif d.get("is_violation") is False:
+        d["verdict"] = "ANNOTATOR_CORRECT"
+    elif d.get("is_violation") is True:
+        d["verdict"] = "MODEL_CONFIRMED_ERROR"
+
+    conf_cls = d.get("confirmed_class")
+    if not conf_cls or str(conf_cls).lower() in ("null", "none", "n/a", ""):
+        d["confirmed_class"] = annotator_cat if annotator_cat not in ("unknown", "none") else "object"
+    else:
+        d["confirmed_class"] = str(conf_cls).strip()
+
+    try:
+        conf_val = float(d.get("confidence", 0.85))
+        d["confidence"] = max(0.0, min(1.0, conf_val))
+    except (TypeError, ValueError):
+        d["confidence"] = 0.85
+
+    if not d.get("explanation") or not str(d.get("explanation")).strip():
+        if d.get("is_violation"):
+            d["explanation"] = f"Phát hiện lỗi gán nhãn, đối tượng đúng là '{d['confirmed_class']}'."
+        else:
+            d["explanation"] = f"Đối tượng '{d['confirmed_class']}' được gán nhãn chính xác."
+
+    if not d.get("action") or not str(d.get("action")).strip():
+        if d.get("is_violation"):
+            d["action"] = f"Sửa nhãn thành '{d['confirmed_class']}'."
+        else:
+            d["action"] = "Giữ nguyên nhãn."
+
+    return d
 
 
 def _validate_arbitration(data: dict, actual_model: str) -> dict:
@@ -542,6 +596,13 @@ def _validate_arbitration(data: dict, actual_model: str) -> dict:
             raise ValueError(f"Missing {field}")
     return {**{field: data[field] for field in ("is_violation", "verdict", "confirmed_class", "confidence", "explanation", "action")},
             "model": actual_model, "requires_review": False}
+
+
+import threading
+import time
+
+_GEMINI_ARBITRATION_SEMAPHORE = threading.BoundedSemaphore(value=1)
+_MODEL_COOLDOWNS: dict[str, float] = {}
 
 
 def arbitrate_dispute(
@@ -581,14 +642,15 @@ def arbitrate_dispute(
         return _unresolved_dispute("Chưa cấu hình Gemini để phân xử bất đồng.")
     if not image_data:
         return _unresolved_dispute("Thiếu ảnh để phân xử bất đồng.")
-    if not guideline.strip():
-        return _unresolved_dispute("Chưa có guideline áp dụng để phân xử.")
+    if not guideline or not guideline.strip():
+        from ai_engine.guideline_manager import DEFAULT_GUIDELINES
+        guideline = DEFAULT_GUIDELINES
 
     patch_bytes, mime = _crop_patch(image_data, box) if image_data else (b"", "image/jpeg")
 
     prompt = (
         "Bạn là TRỌNG TÀI QUY CÁCH VLM (Gemini Arbiter) chuyên giải quyết TRANH CHẤP GÁN NHÃN 2D.\n"
-        "Tình huống: Có bất đồng giữa các kết quả nhận diện hoặc với Annotator. Thiếu detection không chứng minh nhãn sai.\n\n"
+        "Tình huống: Có bất đồng giữa các kết quả nhận diện hoặc giữa model với Annotator.\n\n"
         f"THÔNG TIN ĐỐI TƯỢNG:\n"
         f"- {annotation_description} (Tọa độ ứng viên: {box})\n"
         f"- Model 1 ({a_name}): {a_verdict}\n"
@@ -598,9 +660,10 @@ def arbitrate_dispute(
         "1. Quan sát vùng ảnh được cung cấp.\n"
         "2. Đưa ra phán quyết công tâm:\n"
         f"   - Nếu Annotator GÁN ĐÚNG: is_violation = false, verdict = 'ANNOTATOR_CORRECT', confirmed_class = '{annotator_cat}'.\n"
-        "   - Nếu thiếu bằng chứng: is_violation = false, verdict = 'UNRESOLVED_DISPUTE'. Không suy đoán kết luận.\n"
-        "   - Nếu Annotator GÁN SAI (ví dụ gán nhầm loại xe/người, gán thừa): is_violation = true, verdict = 'MODEL_CONFIRMED_ERROR', chỉ rõ confirmed_class đúng.\n"
+        f"   - Nếu một trong các Model phát hiện cùng class với Annotator và không có bằng chứng gán sai: Ưu tiên xác nhận nhãn của Annotator: is_violation = false, verdict = 'ANNOTATOR_CORRECT'. Thiếu detection từ một model không chứng minh nhãn sai.\n"
+        "   - Nếu Annotator GÁN SAI (ví dụ gán nhầm loại xe/người, gán thừa vào khoảng trống): is_violation = true, verdict = 'MODEL_CONFIRMED_ERROR', chỉ rõ confirmed_class đúng.\n"
         "   - Nếu đây là vật thể rõ ràng bị Annotator BỎ SÓT: is_violation = true, verdict = 'OBJECT_MISSED', chỉ rõ confirmed_class đúng.\n"
+        "   - Nếu thiếu bằng chứng hoặc ảnh quá mờ không xác định được: is_violation = false, verdict = 'UNRESOLVED_DISPUTE'.\n"
         "3. Explanation và action phải CỰC KỲ NGẮN GỌN (tối đa 1 câu súc tích mỗi mục)."
     )
 
@@ -614,7 +677,10 @@ def arbitrate_dispute(
                 "type": "OBJECT",
                 "properties": {
                     "is_violation": {"type": "BOOLEAN"},
-                    "verdict": {"type": "STRING"},
+                    "verdict": {
+                        "type": "STRING",
+                        "enum": ["ANNOTATOR_CORRECT", "MODEL_CONFIRMED_ERROR", "OBJECT_MISSED", "UNRESOLVED_DISPUTE"]
+                    },
                     "confirmed_class": {"type": "STRING"},
                     "explanation": {"type": "STRING"},
                     "action": {"type": "STRING"},
@@ -626,22 +692,39 @@ def arbitrate_dispute(
     }
 
     primary_model = model_name()
-    candidate_models = [primary_model]
-    models_to_try = [m for m in candidate_models if m]
+    candidate_models = [primary_model, "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"]
+    models_to_try = []
+    for m in candidate_models:
+        if m and m not in models_to_try:
+            models_to_try.append(m)
 
-    for current_m in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_m}:generateContent"
-        request = urllib.request.Request(url, data=json.dumps(body).encode(), headers={
-            "Content-Type": "application/json", "x-goog-api-key": key
-        }, method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=25) as response:
-                result = json.loads(response.read().decode("utf-8"))
-            text = "".join(p.get("text", "") for p in result.get("candidates", [{}])[0].get("content", {}).get("parts", []))
-            data = json.loads(text)
-            return _validate_arbitration(data, current_m)
-        except Exception:
-            continue
+    now = time.time()
+    # Lọc bỏ các model vừa bị 429 (trong vòng 60 giây) để không làm chậm cả batch
+    available_models = [m for m in models_to_try if _MODEL_COOLDOWNS.get(m, 0) <= now]
+    if not available_models:
+        available_models = models_to_try  # Nếu tất cả đều cooldown, thử lại từ đầu
+
+    with _GEMINI_ARBITRATION_SEMAPHORE:
+        for current_m in available_models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_m}:generateContent"
+            request = urllib.request.Request(url, data=json.dumps(body).encode(), headers={
+                "Content-Type": "application/json", "x-goog-api-key": key
+            }, method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=25) as response:
+                    result = json.loads(response.read().decode("utf-8"))
+                text = "".join(p.get("text", "") for p in result.get("candidates", [{}])[0].get("content", {}).get("parts", []))
+                data = json.loads(text)
+                normalized_data = _normalize_raw_gemini_arbitration(data, annotator_cat)
+                return _validate_arbitration(normalized_data, current_m)
+            except urllib.error.HTTPError as he:
+                if he.code == 429:
+                    _MODEL_COOLDOWNS[current_m] = time.time() + 60.0
+                print(f"[Gemini Arbiter] Model {current_m} HTTP {he.code}, trying fallback model...")
+                continue
+            except Exception as exc:
+                print(f"[Gemini Arbiter] Model {current_m} error: {type(exc).__name__}: {exc}")
+                return _unresolved_dispute("Không thể kết nối đến Gemini; bất đồng chưa được giải quyết.")
 
     return _unresolved_dispute("Gemini không trả về phán quyết hợp lệ; bất đồng chưa được giải quyết.")
 

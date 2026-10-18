@@ -1,0 +1,143 @@
+[
+  {
+    "name": "b1c66a42-6f7d68ca.jpg",
+    "width": 1280,
+    "height": 720,
+    "labels": [
+      {
+        "id": "CORRECT_CAR_01",
+        "category": "car",
+        "box2d": {
+          "x1": 1205.5,
+          "y1": 412.1,
+          "x2": 1279.7,
+          "y2": 524.3
+        },
+        "attributes": {
+          "occluded": false,
+          "truncated": true
+        },
+        "_test_case": "CHUẨN: Cả người và AI đều thống nhất (Pass)"
+      },
+      {
+        "id": "ERROR_LOOSE_BOX_02",
+        "category": "car",
+        "box2d": {
+          "x1": 200.0,
+          "y1": 310.0,
+          "x2": 400.0,
+          "y2": 440.0
+        },
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "_test_case": "LỖI 1: Lệch box / Viền lỏng (Tightness kém, bao thừa nền đường > 20px)"
+      },
+      {
+        "id": "ERROR_GHOST_BOX_03",
+        "category": "car",
+        "box2d": {
+          "x1": 480.0,
+          "y1": 520.0,
+          "x2": 660.0,
+          "y2": 650.0
+        },
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "_test_case": "LỖI 2: Thừa box / Box ma (Vẽ box xe trên mặt đường trống không có vật thể)"
+      },
+      {
+        "id": "ERROR_WRONG_CLASS_04",
+        "category": "car",
+        "box2d": {
+          "x1": 939.0,
+          "y1": 336.0,
+          "x2": 1205.0,
+          "y2": 484.0
+        },
+        "attributes": {
+          "occluded": true,
+          "truncated": false
+        },
+        "_test_case": "LỖI 3: Sai nhãn class (Xe tải lớn có thùng hàng nhưng gán là 'car')"
+      },
+      {
+        "id": "ERROR_TINY_BOX_05",
+        "category": "car",
+        "box2d": {
+          "x1": 350.0,
+          "y1": 250.0,
+          "x2": 354.0,
+          "y2": 254.0
+        },
+        "attributes": {
+          "occluded": false,
+          "truncated": false
+        },
+        "_test_case": "LỖI 4: Box quá bé / Nhiễu vi phạm quy chuẩn (Kích thước 4x4px < 6px)"
+      },
+      {
+        "id": "ERROR_DUP_BOX_06A",
+        "category": "car",
+        "box2d": {
+          "x1": 748.0,
+          "y1": 360.0,
+          "x2": 812.0,
+          "y2": 410.0
+        },
+        "attributes": {
+          "occluded": true,
+          "truncated": false
+        },
+        "_test_case": "LỖI 5A: Box gốc của xe 06"
+      },
+      {
+        "id": "ERROR_DUP_BOX_06B",
+        "category": "car",
+        "box2d": {
+          "x1": 750.0,
+          "y1": 361.0,
+          "x2": 813.0,
+          "y2": 411.0
+        },
+        "attributes": {
+          "occluded": true,
+          "truncated": false
+        },
+        "_test_case": "LỖI 5B: Box trùng lặp đè lên xe 06 (Duplicate IoU > 0.90)"
+      }
+    ],
+    "_test_suite_metadata": {
+      "description": "Bộ Test Bounding Box chuyên dụng chứa đầy đủ các lỗi người gán nhãn điển hình",
+      "flaws_included": [
+        {
+          "code": "MISSING_BOX",
+          "desc": "Thiếu box: Xe tại [792, 361, 899, 427] không được gán nhãn"
+        },
+        {
+          "code": "LOOSE_BOX",
+          "desc": "Lệch box: Xe ID ERROR_LOOSE_BOX_02 vẽ bao thừa hơn 20px ra ngoài"
+        },
+        {
+          "code": "GHOST_BOX",
+          "desc": "Thừa box: Box ID ERROR_GHOST_BOX_03 vẽ trên mặt đường trống"
+        },
+        {
+          "code": "WRONG_CLASS",
+          "desc": "Sai class: Xe tải lớn ID ERROR_WRONG_CLASS_04 bị gán nhãn 'car'"
+        },
+        {
+          "code": "TINY_BOX",
+          "desc": "Box quá bé: Box ID ERROR_TINY_BOX_05 kích thước 4x4px vi phạm §1.3"
+        },
+        {
+          "code": "DUPLICATE_BOX",
+          "desc": "Box trùng lặp: Hai box 06A và 06B đè lên nhau vi phạm §1.4"
+        }
+      ]
+    }
+  }
+]

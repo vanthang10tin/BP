@@ -618,11 +618,26 @@ def infer_segmentation(image: bytes, threshold: float, classes: list[str], label
             except Exception as exc:
                 print(f"[WARN] DINOv3 container inference failed, falling back: {exc}")
 
-    # 3. Default: Native YOLO26-Seg model (Fast local execution, zero-wait)
+    # 3. Default: Native YOLO26-Seg + SAM 2.1 Ensemble (with DINOv3 Panoptic support if available)
     try:
         y26_seg = _get_yolo26_seg()
         if y26_seg is not None:
-            return _infer_yolo26_seg_native(image, threshold, classes, label_mapping)
+            yolo_results, yolo_info = _infer_yolo26_seg_native(image, threshold, classes, label_mapping)
+            # If local DINOv3 Panoptic container on 32005 is active, combine panoptic background for 19-class scene coverage
+            info_dino = provider_info("dinov3_seg")
+            if info_dino.get("available"):
+                try:
+                    payload = {"image": base64.b64encode(image).decode("ascii"), "threshold": threshold,
+                               "task_labels": classes, "mapping": label_mapping or {}}
+                    dino_results = _post("dinov3_seg", payload, timeout=15)
+                    if isinstance(dino_results, list) and dino_results:
+                        for d in dino_results:
+                            d["model"] = "DINOv3-Panoptic"
+                        combined = dino_results + yolo_results
+                        return combined, {"id": "segmentation", "name": "YOLO26-Seg + SAM 2.1 + DINOv3 Panoptic Ensemble", "available": True, "privacy": "loopback"}
+                except Exception as dex:
+                    print(f"[WARN] DINOv3 panoptic auxiliary inference failed: {dex}")
+            return yolo_results, yolo_info
     except Exception as exc:
         print(f"[WARN] Native YOLO26-Seg inference failed, falling back: {exc}")
 

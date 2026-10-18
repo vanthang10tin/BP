@@ -290,14 +290,14 @@
                                     <button class="layer-btn focus-mode @(OnlyShowIssues ? "active" : "")" @onclick="() => OnlyShowIssues = !OnlyShowIssues" title="Lọc box liên quan đến candidate cần người review; model disagreement không chứng minh nhãn sai.">
                                         <i class="bi @(OnlyShowIssues ? "bi-funnel-fill" : "bi-funnel")"></i> @(OnlyShowIssues ? "🎯 Chỉ hiện box cần review: BẬT" : "👁️ Hiện tất cả box")
                                     </button>
-                                    <button class="layer-btn human @(ShowHumanBoxes ? "active" : "")" @onclick="() => ShowHumanBoxes = !ShowHumanBoxes" title="Ẩn/Hiện nhãn người đánh (Màu xanh)">
-                                        <span class="dot-human"></span> Nhãn người (@HumanBoxCount)
+                                    <button class="layer-btn human @(ShowHumanBoxes ? "active" : "")" @onclick="() => ShowHumanBoxes = !ShowHumanBoxes" title="Ẩn/Hiện Box của người gán nhãn (Màu xanh)">
+                                        <span class="dot-human"></span> Box của người (@HumanBoxCount)
                                     </button>
-                                    <button class="layer-btn model @(ShowModelBoxes ? "active" : "")" @onclick="() => ShowModelBoxes = !ShowModelBoxes" title="Ẩn/Hiện AI Model (Màu tím)">
-                                        <span class="dot-model"></span> Model AI (@ModelBoxCount)
+                                    <button class="layer-btn model @(ShowModelBoxes ? "active" : "")" @onclick="() => ShowModelBoxes = !ShowModelBoxes" title="Ẩn/Hiện Box của AI (Màu tím)">
+                                        <span class="dot-model"></span> Box của AI (@ModelBoxCount)
                                     </button>
-                                    <button class="layer-btn issues @(ShowIssueBoxes ? "active" : "")" @onclick="() => ShowIssueBoxes = !ShowIssueBoxes" title="Ẩn/hiện các candidate QC/model cần người review; đây không phải lỗi đã được xác nhận.">
-                                        <span class="dot-issue"></span> Candidate cần review (@IssueBoxCount)
+                                    <button class="layer-btn issues @(ShowIssueBoxes ? "active" : "")" @onclick="() => ShowIssueBoxes = !ShowIssueBoxes" title="Ẩn/Hiện Box cần review (Khác biệt giữa Người và AI - Viền đỏ nét đứt)">
+                                        <span class="dot-issue"></span> Box cần review (@IssueBoxCount)
                                     </button>
                                     <button class="layer-btn labels @(ShowTextLabels ? "active" : "")" @onclick="() => ShowTextLabels = !ShowTextLabels" title="Ẩn/Hiện chữ tên nhãn để không bị che khuất ảnh">
                                         <i class="bi @(ShowTextLabels ? "bi-eye" : "bi-eye-slash")"></i> @(ShowTextLabels ? "Tên nhãn: BẬT" : "Tên nhãn: TẮT")
@@ -472,9 +472,9 @@
                             </div>
 
                             <div class="legend">
-                                <span><i class="dot-human"></i> Nhãn người đánh (Màu xanh)</span>
-                                <span><i class="dot-model"></i> Model AI đề xuất (Màu tím)</span>
-                                <span><i class="dot-issue"></i> Lỗi QC (Viền đỏ nét đứt)</span>
+                                <span><i class="dot-human"></i> Box của người (Màu xanh)</span>
+                                <span><i class="dot-model"></i> Box của AI (Màu tím)</span>
+                                <span><i class="dot-issue"></i> Box cần review (Khác biệt giữa Người và AI - Viền đỏ nét đứt)</span>
                                 <span class="image-hint">@GetString(SelectedFrame ?? default, "frame_name", "")</span>
                             </div>
                         </section>
@@ -779,7 +779,7 @@
     private List<JsonElement> ModelProviders = new();
     private bool UseGemini;
     private bool GeminiConfigured;
-    private string GeminiModel = "gemini-3.1-flash-lite";
+    private string GeminiModel = "gemini-3.8-flash";
     private int GeminiFrameLimit = 10;
     private string? CvatJobResultUrl;
     private string? CvatOperationMessage;

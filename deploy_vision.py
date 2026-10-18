@@ -148,6 +148,16 @@ class VisionEngine:
         # 4. Flagship Refiner: Meta SAM 2.1 Large
         self.sam = SAM(self.sam_weights).to(self.device)
 
+        # 5. Semantic Backbone: SegFormer Cityscapes (19 classes: Road, Sidewalk, Building, Sky, Vegetation...)
+        try:
+            from transformers import SegformerImageProcessor, SegformerForSemanticSegmentation
+            self.seg_processor = SegformerImageProcessor.from_pretrained("nvidia/segformer-b0-finetuned-cityscapes-1024-1024")
+            self.seg_model = SegformerForSemanticSegmentation.from_pretrained("nvidia/segformer-b0-finetuned-cityscapes-1024-1024").to(self.device).eval()
+            print(f"[Modal Cloud GPU] SegFormer Cityscapes loaded on {self.device} for 19-class semantic coverage")
+        except Exception as e:
+            print(f"[Modal Cloud GPU] SegFormer load warning: {e}")
+            self.seg_model = None
+
         self.dino_model = None
         print(f"[Modal Cloud GPU] SOTA Flagship Models loaded on {self.device}: {self.yolo_weights}, {self.dfine_weights}, {self.yolo_seg_weights}, {self.sam_weights}")
 
@@ -230,22 +240,57 @@ class VisionEngine:
             "num_detections": len(predictions)
         }
 
-    # Luồng Segmentation độc lập: YOLO26x-Seg (Bản mạnh nhất) + Meta SAM 2.1 Large
+    # Luồng Segmentation độc lập: SegFormer (Dense 19-class Background) + YOLO26x-Seg + Meta SAM 2.1 Large
     @modal.method()
     def predict_segmentation(self, image_bytes: bytes, threshold: float = 0.25):
         import torch
+        import numpy as np
         from PIL import Image
 
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        w, h = img.size
         segmentations = []
         seg_boxes = []
         seg_labels = []
         seg_confs = []
 
         with torch.inference_mode():
-            # B1. YOLO26x-Seg Flagship Instance Segmentation
+            # B0. SegFormer Cityscapes Semantic Backbone cho các lớp background (đường, trời, nhà, cây, vỉa hè...)
+            if getattr(self, "seg_model", None) is not None:
+                try:
+                    inputs = self.seg_processor(images=img, return_tensors="pt").to(self.device)
+                    outputs = self.seg_model(**inputs)
+                    logits = torch.nn.functional.interpolate(
+                        outputs.logits, size=(h, w), mode="bilinear", align_corners=False
+                    )
+                    pred_labels = logits.argmax(dim=1)[0].cpu().numpy()
+                    
+                    # 9 lớp background/stuff chủ đạo của môi trường đường phố BDD100K
+                    SEMANTIC_CLASSES = {
+                        0: "road", 1: "sidewalk", 2: "building", 3: "wall", 4: "fence",
+                        5: "pole", 8: "vegetation", 9: "terrain", 10: "sky"
+                    }
+                    for cls_id, cls_name in SEMANTIC_CLASSES.items():
+                        bin_mask = (pred_labels == cls_id)
+                        if bin_mask.sum() > 100:
+                            y_idx, x_idx = np.where(bin_mask)
+                            if len(x_idx) > 0:
+                                x1, y1, x2, y2 = int(x_idx.min()), int(y_idx.min()), int(x_idx.max()), int(y_idx.max())
+                                roi = bin_mask[y1:y2 + 1, x1:x2 + 1].astype(np.uint8).flatten().tolist()
+                                segmentations.append({
+                                    "type": "mask",
+                                    "label": cls_name,
+                                    "mask": roi + [x1, y1, x2, y2],
+                                    "box": [x1, y1, x2, y2],
+                                    "confidence": 0.90,
+                                    "model": "segformer-b0"
+                                })
+                except Exception as ex:
+                    print(f"[WARN] SegFormer background segmentation failed: {ex}")
+
+            # B1. YOLO26x-Seg Flagship Instance Segmentation (Phân giải cao 1280px phát hiện vật thể nhỏ/xa)
             try:
-                yseg_res = self.yolo_seg(img, conf=threshold, imgsz=640, verbose=False)
+                yseg_res = self.yolo_seg(img, conf=threshold, imgsz=1280, verbose=False)
                 if yseg_res and len(yseg_res) > 0 and yseg_res[0].masks is not None and yseg_res[0].boxes is not None:
                     for idx, box in enumerate(yseg_res[0].boxes):
                         cls_id = int(box.cls[0].item())
@@ -271,16 +316,16 @@ class VisionEngine:
             except Exception as ex:
                 print(f"[WARN] YOLO26x-Seg failed: {ex}")
 
-            # B2. SAM 2.1 Large Segment Anything trên các bounding box phát hiện từ YOLO26x-Seg
+            # B2. SAM 2.1 Large Segment Anything trên TẤT CẢ bounding boxes (Không cắt giới hạn :10)
             if seg_boxes:
                 try:
-                    sam_res = self.sam(img, bboxes=seg_boxes[:10], verbose=False)
+                    sam_res = self.sam(img, bboxes=seg_boxes, verbose=False)
                     if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
                         for idx, seg in enumerate(sam_res[0].masks.xy):
                             if len(seg) >= 3:
                                 flat_pts = [float(c) for pt in seg for c in pt]
                                 lbl = seg_labels[idx] if idx < len(seg_labels) else "object"
-                                cnf = seg_confs[idx] if idx < len(seg_confs) else 0.9
+                                cnf = seg_confs[idx] if idx < len(seg_confs) else 0.95
                                 bx = seg_boxes[idx] if idx < len(seg_boxes) else []
                                 segmentations.append({
                                     "type": "polygon",

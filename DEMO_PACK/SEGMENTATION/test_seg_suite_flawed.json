@@ -1,0 +1,68 @@
+[
+  {
+    "name": "7d06fefd-f7be05a6.jpg",
+    "width": 1280,
+    "height": 720,
+    "mask_index": "DEMO_PACK/SEGMENTATION/masks_flawed/flawed_7d06fefd-f7be05a6_train_id.png",
+    "mask_color": "DEMO_PACK/SEGMENTATION/masks_flawed/flawed_7d06fefd-f7be05a6_train_color.png",
+    "classes_present": [
+      {
+        "id": 0,
+        "name": "road"
+      },
+      {
+        "id": 1,
+        "name": "sidewalk"
+      },
+      {
+        "id": 2,
+        "name": "building"
+      },
+      {
+        "id": 4,
+        "name": "fence"
+      },
+      {
+        "id": 5,
+        "name": "pole"
+      },
+      {
+        "id": 7,
+        "name": "traffic_sign"
+      },
+      {
+        "id": 8,
+        "name": "vegetation"
+      },
+      {
+        "id": 10,
+        "name": "sky"
+      },
+      {
+        "id": 13,
+        "name": "car"
+      }
+    ],
+    "_test_suite_metadata": {
+      "description": "Bộ Test Segmentation chuyên dụng chứa các lỗi phân đoạn cố tình",
+      "flaws_included": [
+        {
+          "code": "UNDER_SEGMENTATION",
+          "desc": "Viền chưa khít / Cắt cụt nóc xe ô tô"
+        },
+        {
+          "code": "OVER_SEGMENTATION",
+          "desc": "Tràn viền: Mask xe bị lem tràn ra mặt đường 30px"
+        },
+        {
+          "code": "MUTUAL_EXCLUSION_OVERLAP",
+          "desc": "Trùng lấn lớp cấm: Mask sidewalk đè lên giữa lòng đường road"
+        },
+        {
+          "code": "WRONG_CLASS_MASK",
+          "desc": "Sai class mask: Vùng vỉa hè bị gán nhãn thành building"
+        }
+      ]
+    }
+  }
+]
