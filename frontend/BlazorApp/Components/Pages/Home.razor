@@ -878,7 +878,7 @@
                 ModelProviders = GetArray(modelInfo, "providers");
                 GeminiConfigured = GetBool(GetObject(modelInfo, "gemini"), "configured");
                 GeminiModel = GetString(GetObject(modelInfo, "gemini"), "model", GeminiModel);
-                UseGemini = GeminiConfigured;
+                UseGemini = false;
             }
             catch { ModelProviders.Clear(); }
             await InvokeAsync(StateHasChanged);

@@ -52,6 +52,8 @@ def _api_key() -> str:
 
 
 def configured() -> bool:
+    if os.environ.get("QC_DISABLE_GEMINI", "").lower() in ("true", "1", "yes"):
+        return False
     return bool(_api_key())
 
 
