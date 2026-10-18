@@ -74,3 +74,22 @@ Provenance của lần chạy: file nhãn SHA-256 `28e3c05c04519c813c712278ae68e
 - CVAT live integration chưa được xác minh trên job thử của đội.
 - Chưa có independent adjudicated gold set hoặc pilot đo thời gian review.
 - Các bài test model inference/weights local (như YOLO26-Seg native) yêu cầu nạp weights và đặt cờ `QC_RUN_MODEL_TESTS=1` khi muốn chạy tích hợp đầy đủ.
+
+
+## 2026-10-19 — detection / segmentation display flow
+
+- Preserve native task labels (semantic `person` vs bbox `pedestrian`), serialize shared native model loading/inference, and retain detector confidence for SAM prompts rather than assigning 0.95.
+- Return actual segmentation canvas dimensions; reject image/index-mask size mismatches. The viewer selects the AI mask after a segmentation run and computes polygon bounds from all vertices.
+- `python -m pytest backend/test_detection_display_flow.py backend/test_qc_pipeline_normalization.py backend/test_arbitration_integrity.py backend/test_segmentation_pipeline.py -q`: 27 passed, 3 optional model tests skipped.
+- `python -m pytest backend/test_render_regressions.py -q --basetemp scratch/pytest-display-network-check`: 8 passed outside the sandbox. In the sandbox, Windows asyncio socket-pair initialization hung before the two API health tests reached application code.
+- Blazor regression executable passed after geometry changes (numeric JSON, geometry, IDs, upload limits/recovery).
+- Direct native inference smoke on `DEMO_PACK/SEGMENTATION/images/7d06fefd-f7be05a6.jpg`, confidence 0.25, CPU: YOLO26x + RT-DETR-X returned 25 raw rectangles (15.5 s); YOLO26-Seg + SAM 2.1 returned 22 polygons (13.5 s). Predictions in this sample were cars. Counts include outputs from both models, not unique objects.
+- These checks establish execution and output contracts, not precision/recall improvement. No independent accuracy benchmark or browser visual verification was performed. Native instance models do not supply complete semantic background coverage (road/sky/building).
+
+### Follow-up before push
+
+- Distinguish advertised model coverage from classes actually detected. A supported class with zero predictions creates an unresolved review candidate; unsupported classes are listed separately and excluded from supported IoU. The viewer shows supported IoU and the uncovered class list.
+- Preserve semantic `person` for Modal responses while respecting explicit label overrides.
+- Full backend suite: `python -m pytest backend -q --basetemp scratch/pytest-final-push` — **112 passed, 3 skipped, 5 subtests passed**; one existing Starlette/httpx deprecation warning. Executed outside the sandbox for Windows asyncio socket support.
+- `dotnet run --no-restore --project tests/BlazorRegression/BlazorRegression.csproj` — passed.
+- Semantic background inference remains dependent on an available semantic provider (the Modal pipeline includes SegFormer); this change does not train new weights or deploy Modal.

@@ -39,7 +39,10 @@ def map_predictions(predictions, body):
     mapping = body.get("mapping") or {}
     if not isinstance(mapping, dict):
         raise ValueError("mapping must be an object")
-    return [{**item, "label": mapping.get(item["label"], item["label"])} for item in predictions]
+    task_labels = body.get("task_labels") or []
+    defaults = {"pedestrian": "person"} if "person" in task_labels and "pedestrian" not in task_labels else {}
+    effective = {**defaults, **mapping}
+    return [{**item, "label": effective.get(item["label"], item["label"])} for item in predictions]
 
 
 modal_runtime_env = {

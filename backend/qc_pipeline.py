@@ -870,6 +870,8 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                 converted[np.all(gt[:, :, :3] == rgb, axis=2)] = mask_id
             gt = converted
         height, width = gt.shape[:2]
+        if image.size != (width, height):
+            raise ValueError(f"Image/index mask dimensions differ for {name}: {image.size} vs {(width, height)}")
         preferred_seg_model = profile.get("preferred_model") or profile.get("model")
         model_results, info = infer_segmentation(image_data, threshold, class_names, model_label_mapping, preferred_model=preferred_seg_model)
         pred_yolo = np.full((height, width), -1, dtype=np.int16)
@@ -907,6 +909,11 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                 pred_yolo[y1:y2 + 1, x1:x2 + 1][roi] = cid
                 mapped_classes_yolo.add(canonical)
 
+        advertised_classes = info.get("supported_classes")
+        supported_classes = ({model_label_mapping.get(c, aliases.get(_normal(c), c))
+                              for c in advertised_classes} if isinstance(advertised_classes, list)
+                             else set(mapped_classes))
+        unsupported_classes = set(class_names) - supported_classes
         has_dual_seg = bool(mapped_classes_yolo and mapped_classes_sam)
         guideline_txt = getattr(guideline_manager, "get_guideline_text", lambda: "")() if guideline_manager else ""
         classes_metrics = []
@@ -925,7 +932,7 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
             iou = intersection / union
             classes_metrics.append({"class_id": mask_id, "class_name": class_name, "iou": round(iou, 5),
                                     "intersection_pixels": intersection, "union_pixels": union, "ground_truth_pixels": int(gt_pixels.sum()),
-                                    "prediction_pixels": int(pred_pixels.sum()), "prediction_supported": class_name in mapped_classes})
+                                    "prediction_pixels": int(pred_pixels.sum()), "prediction_supported": class_name in supported_classes})
 
             if gt_pixels.any():
                 mismatch_y, mismatch_x = np.where(np.logical_xor(gt_pixels, pred_pixels))
@@ -978,7 +985,7 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                             "guideline_rule": guideline_manager.format_citation("mask", class_name) if guideline_manager else "", "review_status": "pending", "auto_healable": False
                         })
 
-                elif iou < min_iou and (class_name in mapped_classes or pred_pixels.any()):
+                elif iou < min_iou and (class_name in supported_classes or advertised_classes is None):
                     # An absent/low-overlap prediction is not proof of a bad
                     # mask. Keep it visible for review, including zero-output
                     # model runs, instead of returning a clean frame.
@@ -993,7 +1000,7 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                     })
         macro_all = sum(m["iou"] for m in classes_metrics) / len(classes_metrics) if classes_metrics else None
         supported_metrics = [m for m in classes_metrics if m.get("prediction_supported")]
-        macro_supported = sum(m["iou"] for m in supported_metrics) / len(supported_metrics) if supported_metrics else macro_all
+        macro_supported = sum(m["iou"] for m in supported_metrics) / len(supported_metrics) if supported_metrics else None
         macro = macro_all
         rgba = np.zeros((height, width, 4), dtype=np.uint8)
         palette = [(93, 224, 188, 145), (255, 180, 76, 145), (174, 149, 255, 145), (255, 108, 125, 145), (93, 173, 238, 145)]
@@ -1002,14 +1009,15 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
             rgba[pred == class_to_id[cname]] = rgb
         color_img = Image.fromarray(rgba, mode="RGBA")
         png = io.BytesIO(); color_img.save(png, format="PNG")
-        out = {"frame_name": name, "frame_index": frame_index, "priority_rank": 3 if issues else 4,
+        out = {"frame_name": name, "frame_index": frame_index, "width": width, "height": height, "priority_rank": 3 if issues else 4,
                "priority_label": "MASK REVIEW CANDIDATE" if issues else "MASKS COMPARED",
                "recommendation": "Review class disagreements" if issues else "No configured mask threshold crossed; not a verified pass",
                "error_count": len(issues), "errors": issues, "issues": issues, "labels": [], "mask_color": Path(str(row.get("mask_color", ""))).name,
                "classes_present": row.get("classes_present", []), "model_segmentation_metrics": {
                    "macro_iou": round(macro, 5) if macro is not None else None,
                    "macro_iou_supported": round(macro_supported, 5) if macro_supported is not None else None,
-                   "class_iou": classes_metrics, "classes_model_supported": sorted(mapped_classes), "mask_iou_threshold": min_iou},
+                   "class_iou": classes_metrics, "classes_model_supported": sorted(supported_classes),
+                   "classes_not_evaluated": sorted(unsupported_classes), "mask_iou_threshold": min_iou},
                "model_predictions": model_results if model_results else [{"label": k, "mask_id": v} for v, k in id_to_class.items() if k in mapped_classes],
                "prediction_mask_png_base64": base64.b64encode(png.getvalue()).decode("ascii"),
                "_provider_info": info}
@@ -1025,8 +1033,11 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
         f.pop("_provider_info", None)
     model_issues = sum(len(f.get("issues", [])) for f in output_frames)
     output_frames.sort(key=lambda f: (f["lqs"], f["priority_rank"], -f["error_count"], f["frame_index"]))
+    supported_scores = [f["model_segmentation_metrics"]["macro_iou_supported"] for f in output_frames
+                        if f["model_segmentation_metrics"]["macro_iou_supported"] is not None]
     return {"status": "success", "task_type": "semantic_segmentation", "models": providers, "model_issues": model_issues,
             "summary": {"total_frames": len(output_frames), "total_errors": model_issues,
+                        "macro_iou_supported": round(sum(supported_scores) / len(supported_scores), 5) if supported_scores else None,
                         "mean_lqs": round(sum(f.get("lqs", 100.0) for f in output_frames) / max(1, len(output_frames)), 1),
                         "objectlab_breakdown": {
                             "missing_objects": sum(f.get("objectlab_counts", {}).get("missing_object", 0) for f in output_frames),

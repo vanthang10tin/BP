@@ -13,6 +13,8 @@ import ipaddress
 import json
 import os
 import time
+import threading
+from functools import wraps
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -244,6 +246,28 @@ COCO_TO_BDD100K = {
 }
 
 
+# Ultralytics keeps mutable predictor state; initialization and inference must
+# not overlap across the frame workers or status requests.
+_NATIVE_MODEL_LOCK = threading.RLock()
+
+
+def _serialized_native(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with _NATIVE_MODEL_LOCK:
+            return fn(*args, **kwargs)
+    return wrapped
+
+
+def _task_label_mapping(classes, overrides=None):
+    mapping = dict(COCO_TO_BDD100K)
+    # Semantic BDD uses "person", whereas bbox BDD uses "pedestrian".
+    # Preserve a native class when it already belongs to the task ontology.
+    mapping.update({name: name for name in classes})
+    mapping.update(overrides or {})
+    return mapping
+
+
 def _resolve_model_candidates(filenames: list[str]) -> list[str]:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.abspath(os.path.join(current_dir, ".."))
@@ -266,6 +290,7 @@ def _resolve_model_candidates(filenames: list[str]) -> list[str]:
     return candidates
 
 
+@_serialized_native
 def _get_yolo26():
     global _YOLO26_MODEL, _YOLO26_LOAD_ATTEMPTED
     if _YOLO26_MODEL is not None or _YOLO26_LOAD_ATTEMPTED:
@@ -296,6 +321,7 @@ _RTDETR_MODEL = None
 _RTDETR_LOAD_ATTEMPTED = False
 
 
+@_serialized_native
 def _get_rtdetr():
     global _RTDETR_MODEL, _RTDETR_LOAD_ATTEMPTED
     if _RTDETR_MODEL is not None or _RTDETR_LOAD_ATTEMPTED:
@@ -320,6 +346,7 @@ def _get_rtdetr():
     return _RTDETR_MODEL
 
 
+@_serialized_native
 def _get_yolo26_seg():
     global _YOLO26_SEG_MODEL, _YOLO26_SEG_LOAD_ATTEMPTED
     if _YOLO26_SEG_MODEL is not None or _YOLO26_SEG_LOAD_ATTEMPTED:
@@ -347,6 +374,7 @@ _SAM2_MODEL = None
 _SAM2_LOAD_ATTEMPTED = False
 
 
+@_serialized_native
 def _get_sam2():
     global _SAM2_MODEL, _SAM2_LOAD_ATTEMPTED
     if _SAM2_MODEL is not None or _SAM2_LOAD_ATTEMPTED:
@@ -365,15 +393,14 @@ def _get_sam2():
     return _SAM2_MODEL
 
 
+@_serialized_native
 def _infer_yolo26_native(image: bytes, threshold: float, classes: list[str], label_mapping: dict[str, str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     yolo_model = _get_yolo26()
     rtdetr_model = _get_rtdetr()
     if yolo_model is None and rtdetr_model is None:
         raise ProviderError("Neither YOLO26 nor RT-DETR model is available locally.")
 
-    mapping = dict(COCO_TO_BDD100K)
-    if label_mapping:
-        mapping.update(label_mapping)
+    mapping = _task_label_mapping(classes, label_mapping)
 
     predictions = []
     model_runs = []
@@ -445,19 +472,19 @@ def _infer_yolo26_native(image: bytes, threshold: float, classes: list[str], lab
     return predictions, info
 
 
+@_serialized_native
 def _infer_yolo26_seg_native(image: bytes, threshold: float, classes: list[str], label_mapping: dict[str, str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     model = _get_yolo26_seg()
     sam_model = _get_sam2()
     if model is None and sam_model is None:
         raise ProviderError("Neither YOLO26-Seg nor SAM 2.1 model is available.")
 
-    mapping = dict(COCO_TO_BDD100K)
-    if label_mapping:
-        mapping.update(label_mapping)
+    mapping = _task_label_mapping(classes, label_mapping)
 
     predictions = []
     boxes_for_sam = []
     labels_for_sam = []
+    confidences_for_sam = []
 
     with Image.open(io.BytesIO(image)) as pil_img:
         # 1. Run YOLO26-Seg
@@ -472,6 +499,7 @@ def _infer_yolo26_seg_native(image: bytes, threshold: float, classes: list[str],
                     xyxy = [float(coord) for coord in box.xyxy[0].tolist()]
                     boxes_for_sam.append(xyxy)
                     labels_for_sam.append(target_label)
+                    confidences_for_sam.append(conf)
                     if idx < len(res.masks.xy):
                         poly = res.masks.xy[idx]
                         if len(poly) >= 3:
@@ -491,6 +519,8 @@ def _infer_yolo26_seg_native(image: bytes, threshold: float, classes: list[str],
                 sam_res = sam_model(pil_img, bboxes=boxes_for_sam, verbose=False)
                 if sam_res and len(sam_res) > 0 and sam_res[0].masks is not None:
                     for idx, seg in enumerate(sam_res[0].masks.xy):
+                        if idx >= len(boxes_for_sam):
+                            continue
                         if len(seg) >= 3:
                             flat_pts = [float(c) for pt in seg for c in pt]
                             lbl = labels_for_sam[idx] if idx < len(labels_for_sam) else "object"
@@ -500,7 +530,7 @@ def _infer_yolo26_seg_native(image: bytes, threshold: float, classes: list[str],
                                 "label": lbl,
                                 "points": flat_pts,
                                 "box": bx,
-                                "confidence": 0.95,
+                                "confidence": confidences_for_sam[idx],
                                 "model": "SAM2.1"
                             })
             except Exception as exc:
@@ -515,7 +545,7 @@ def _infer_yolo26_seg_native(image: bytes, threshold: float, classes: list[str],
         "device": str(getattr(model or sam_model, "device", "cpu")),
         "type": "mask",
         "label_count": len(model.names) if model else 80,
-        "supported_classes": list(set(mapping.values())),
+        "supported_classes": sorted({mapping.get(n, n) for n in (model.names.values() if model else [])}),
         "thresholds": {},
         "error": None
     }
@@ -636,7 +666,8 @@ def infer_segmentation(image: bytes, threshold: float, classes: list[str], label
                         for d in dino_results:
                             d["model"] = "DINOv3-Panoptic"
                         combined = dino_results + yolo_results
-                        return combined, {"id": "segmentation", "name": "YOLO26-Seg + SAM 2.1 + DINOv3 Panoptic Ensemble", "available": True, "privacy": "loopback"}
+                        return combined, {**yolo_info, "name": "YOLO26-Seg + SAM 2.1 + DINOv3 Panoptic Ensemble",
+                                          "supported_classes": sorted(set(yolo_info.get("supported_classes", [])) | set(info_dino.get("supported_classes", [])))}
                 except Exception as dex:
                     print(f"[WARN] DINOv3 panoptic auxiliary inference failed: {dex}")
             return yolo_results, yolo_info

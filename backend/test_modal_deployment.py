@@ -171,3 +171,10 @@ def test_sam_batches_preserve_all_labels_and_boxes():
     refined = [r for r in result if r['model'] == 'sam2.1_l.pt']
     assert len(refined) == 17
     assert all(r['label'] == 'car' and r['box'] == [0, 0, 1, 1] for r in refined)
+
+
+def test_semantic_person_mapping_respects_task_and_override():
+    predictions = [{"label": "pedestrian"}]
+    assert vision.map_predictions(predictions, {"task_labels": ["person"]})[0]["label"] == "person"
+    assert vision.map_predictions(predictions, {"task_labels": ["pedestrian"]})[0]["label"] == "pedestrian"
+    assert vision.map_predictions(predictions, {"task_labels": ["person"], "mapping": {"pedestrian": "human"}})[0]["label"] == "human"

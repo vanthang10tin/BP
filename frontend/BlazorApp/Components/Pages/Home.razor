@@ -240,7 +240,7 @@
                 { <div class="empty-state"><span class="empty-icon"><i class="bi bi-inboxes"></i></span><h2>No review run yet</h2><p>Upload labels in Prepare, then start an analysis run.</p><button class="primary-button" @onclick="() => Step = 0">Go to Prepare <i class="bi bi-arrow-right"></i></button></div> }
                 else
                 {
-                    <div class="metrics-row"><div class="metric"><small>FRAMES IN RUN</small><b>@Frames.Count</b></div><div class="metric"><small>@(Mode == "segmentation" ? "MACRO IoU" : "FRAMES WITH CANDIDATES")</small><b>@(Mode == "segmentation" ? GetMetric(ResultRoot, "summary", "macro_iou") : ReviewCount.ToString())</b></div><div class="metric"><small>MODEL CANDIDATES</small><b>@GetInt(ResultRoot, "model_issues", 0)</b></div><div class="metric metric-pass"><small>REVIEW DECISIONS</small><b>@TotalDecidedCount / @IssueCount</b><span style="display:block;font-size:9px;color:#94a3b8;margin-top:2px;font-family:'DM Mono',monospace">(@ConfirmedIssueCount đã giữ · @RejectedIssueCount đã xóa)</span></div><div class="metric-source"><i class="bi bi-info-circle"></i>@ModelStatusText · @(GetBool(GetObject(ResultRoot, "gemini"), "used") ? "Gemini + local candidates" : "local-only candidates") · human review required · IoU is not a benchmark</div></div>
+                    <div class="metrics-row"><div class="metric"><small>FRAMES IN RUN</small><b>@Frames.Count</b></div><div class="metric"><small>@(Mode == "segmentation" ? "SUPPORTED IoU" : "FRAMES WITH CANDIDATES")</small><b>@(Mode == "segmentation" ? GetMetric(ResultRoot, "summary", "macro_iou_supported") : ReviewCount.ToString())</b></div><div class="metric"><small>MODEL CANDIDATES</small><b>@GetInt(ResultRoot, "model_issues", 0)</b></div><div class="metric metric-pass"><small>REVIEW DECISIONS</small><b>@TotalDecidedCount / @IssueCount</b><span style="display:block;font-size:9px;color:#94a3b8;margin-top:2px;font-family:'DM Mono',monospace">(@ConfirmedIssueCount đã giữ · @RejectedIssueCount đã xóa)</span></div><div class="metric-source"><i class="bi bi-info-circle"></i>@ModelStatusText · @(GetBool(GetObject(ResultRoot, "gemini"), "used") ? "Gemini + local candidates" : "local-only candidates") · human review required · IoU is not a benchmark</div></div>
                     @if (TaxonomyAlignment is not null)
                     {
                         var activeList = GetArray(TaxonomyAlignment.Value, "active_classes");
@@ -260,7 +260,7 @@
                     <div class="review-layout">
                         <section class="queue-panel"><div class="panel-title"><div><span class="eyebrow">FRAME QUEUE</span><h2>@(Mode == "segmentation" ? "Mask review" : "Review priority")</h2></div><span class="sort-label"><i class="bi @(Mode == "segmentation" ? "bi-images" : "bi-sort-down")"></i> @(Mode == "segmentation" ? "Pack order" : "Rule flags first")</span></div>@if (Mode == "segmentation") { <div class="queue-filters"><span class="filter-pill on">All mask pairs <span>@Frames.Count</span></span></div> } else { <div class="queue-filters"><button class="filter-pill @(QueueFilter == "all" ? "on" : "")" @onclick='() => QueueFilter = "all"'>All <span>@Frames.Count</span></button><button class="filter-pill @(QueueFilter == "review" ? "on" : "")" @onclick='() => QueueFilter = "review"'>Flagged <span>@ReviewCount</span></button><button class="filter-pill @(QueueFilter == "pass" ? "on" : "")" @onclick='() => QueueFilter = "pass"'>No rule flags <span>@PassCount</span></button></div>}
                         <div class="frame-list">@foreach (var frame in VisibleFrames)
-                            { var name = GetString(frame, "frame_name", "frame"); var rank = GetInt(frame, "priority_rank", 4); var issues = GetArray(frame, "errors"); <button class="frame-row @(SelectedFrameName == name ? "chosen" : "")" @onclick="() => SelectFrame(name)"><span class="rank-mark rank-@rank">@(Mode == "segmentation" ? "M" : rank)</span><span class="frame-copy"><b>@name</b><small>@(Mode == "segmentation" ? $"Macro IoU {GetMetric(frame, "model_segmentation_metrics", "macro_iou")} · {issues.Count} candidate(s)" : $"{GetString(frame, "priority_label", "NO RULE FLAGS")} · {issues.Count} candidate(s)")</small></span><span class="queue-severity"><i class="bi bi-exclamation-circle"></i> @issues.Count</span></button> }</div>
+                            { var name = GetString(frame, "frame_name", "frame"); var rank = GetInt(frame, "priority_rank", 4); var issues = GetArray(frame, "errors"); <button class="frame-row @(SelectedFrameName == name ? "chosen" : "")" @onclick="() => SelectFrame(name)"><span class="rank-mark rank-@rank">@(Mode == "segmentation" ? "M" : rank)</span><span class="frame-copy"><b>@name</b><small>@(Mode == "segmentation" ? $"Supported IoU {GetMetric(frame, "model_segmentation_metrics", "macro_iou_supported")} · {issues.Count} candidate(s)" : $"{GetString(frame, "priority_label", "NO RULE FLAGS")} · {issues.Count} candidate(s)")</small></span><span class="queue-severity"><i class="bi bi-exclamation-circle"></i> @issues.Count</span></button> }</div>
                         </section>
                         <section class="canvas-panel @(IsFullscreen ? "is-fullscreen" : "")">
                             <div class="panel-title image-panel-title">
@@ -304,6 +304,14 @@
                                     </button>
                                 </div>
                                 @if (Mode == "segmentation") {
+                                    @if (SelectedFrame is not null)
+                                    {
+                                        var uncovered = GetArray(GetObject(SelectedFrame.Value, "model_segmentation_metrics"), "classes_not_evaluated");
+                                        if (uncovered.Count > 0)
+                                        {
+                                            <p role="status">Chưa đánh giá các lớp: @string.Join(", ", uncovered.Select(c => c.GetString())). Cần model semantic có hỗ trợ các lớp này.</p>
+                                        }
+                                    }
                                     <div>
                                         <button class="layer-btn @(ShowModelMask ? "" : "active")" @onclick="() => ShowModelMask = false">Uploaded Mask</button>
                                         <button class="layer-btn @(ShowModelMask ? "active" : "")" @onclick="ToggleModelMask">AI Model Mask</button>
@@ -1358,7 +1366,7 @@
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(body);
             using var doc = JsonDocument.Parse(body); ResultRoot = doc.RootElement.Clone(); Frames = GetArray(ResultRoot, "sorted_frames");
             if (Frames.Count == 0) throw new InvalidOperationException("API không trả về frame nào. Kiểm tra profile, taxonomy và mask mapping.");
-            IssueDecisions.Clear(); SelectedFrameName = GetString(Frames[0], "frame_name", ""); SelectedFrame = Frames[0]; Step = 1; ApiOnline = true; ShowModelMask = false;
+            IssueDecisions.Clear(); SelectedFrameName = GetString(Frames[0], "frame_name", ""); SelectedFrame = Frames[0]; Step = 1; ApiOnline = true; ShowModelMask = Mode == "segmentation" && HasModelMask(Frames[0]);
             if (ResultRoot.TryGetProperty("taxonomy_alignment", out var taxAlign) && taxAlign.ValueKind == JsonValueKind.Object)
             {
                 TaxonomyAlignment = taxAlign.Clone();
@@ -1388,6 +1396,7 @@
     {
         if (ShowModelMask && frame.TryGetProperty("prediction_mask_png_base64", out var predicted) && predicted.ValueKind == JsonValueKind.String)
             return $"data:image/png;base64,{predicted.GetString()}";
+        if (ShowModelMask) return null;
         return MaskFiles.TryGetValue(Path.GetFileName(GetString(frame, "mask_color", "").Replace('\\', '/')), out var data) ? data : null;
     }
     private static bool HasModelMask(JsonElement frame) => frame.TryGetProperty("prediction_mask_png_base64", out var predicted) && predicted.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(predicted.GetString());
@@ -2183,6 +2192,17 @@
         }
         if (prediction.TryGetProperty("points", out var pts) && pts.ValueKind == JsonValueKind.Array && pts.GetArrayLength() >= 4)
         {
+            if (pts.GetArrayLength() >= 6 && pts.GetArrayLength() % 2 == 0)
+            {
+                var xs = new List<double>(); var ys = new List<double>();
+                for (var i = 0; i < pts.GetArrayLength(); i += 2)
+                {
+                    if (!TryNumber(pts[i], out var x) || !TryNumber(pts[i + 1], out var y)) return null;
+                    xs.Add(x); ys.Add(y);
+                }
+                var width = xs.Max() - xs.Min(); var height = ys.Max() - ys.Min();
+                return width > 0 && height > 0 ? (xs.Min(), ys.Min(), width, height) : null;
+            }
             if (TryNumber(pts[0], out var px) && TryNumber(pts[1], out var py) && TryNumber(pts[2], out var px2) && TryNumber(pts[3], out var py2))
             {
                 var pw = px2 - px; var ph = py2 - py;
@@ -2195,17 +2215,9 @@
     {
         if (el.ValueKind != JsonValueKind.Object) return null;
         if (el.TryGetProperty("box2d", out _)) return GetBox(el);
-        if (el.TryGetProperty("box", out _)) return GetPredictionBox(el);
-        if (el.TryGetProperty("points", out var pts) && pts.ValueKind == JsonValueKind.Array && pts.GetArrayLength() >= 4)
-        {
-            if (TryNumber(pts[0], out var x1) && TryNumber(pts[1], out var y1) && TryNumber(pts[2], out var x2) && TryNumber(pts[3], out var y2))
-            {
-                var w = x2 - x1; var h = y2 - y1;
-                if (w > 0 && h > 0) return (x1, y1, w, h);
-            }
-        }
-        return null;
+        return GetPredictionBox(el);
     }
+
     private (double X, double Y, double W, double H)? GetIssueBox(JsonElement issue)
     {
         var box = GetProperty(issue, "suggested_box");

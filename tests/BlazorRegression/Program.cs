@@ -18,6 +18,10 @@ Check(Call("GetBox", null, Json("null")) is null, "Null annotations skipped");
 Check(!(bool)Call("ObjectIdMatches", null, "10", "1")!, "Object 1 must not match object 10");
 Check((bool)Call("ObjectIdMatches", null, "1 & 2", "1")!, "Duplicate-object evidence still matches");
 
+var polygonBox = ((double X, double Y, double W, double H)?)Call("GetPredictionBox", null,
+    Json("{\"type\":\"polygon\",\"points\":[10,10,30,10,30,40,10,40]}"));
+Check(polygonBox == (10d, 10d, 20d, 30d), "Polygon bounds must include every vertex");
+
 var home = new Home();
 async Task Upload(params IBrowserFile[] files) => await (Task)Call("OnImagesSelected", home, new InputFileChangeEventArgs(files))!;
 await Upload(Enumerable.Range(0, 201).Select(i => (IBrowserFile)new FakeFile($"{i}.png", 1)).ToArray());
