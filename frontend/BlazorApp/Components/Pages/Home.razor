@@ -361,7 +361,7 @@
                                                 }
                                                 @if (ShowIssueBoxes)
                                                 {
-                                                    @foreach (var issue in SelectedIssues)
+                                                    @foreach (var issue in ReviewBoxIssues)
                                                     {
                                                         if (IsIssueRejected(issue)) continue;
                                                         var issueId = GetString(issue, "issue_id", "");
@@ -451,7 +451,7 @@
 
                                                 @if (ShowIssueBoxes)
                                                 {
-                                                    @foreach (var issue in SelectedIssues)
+                                                    @foreach (var issue in ReviewBoxIssues)
                                                     {
                                                         if (IsIssueRejected(issue)) continue; // REJECT THÌ MẤT BOX LUÔN!
                                                         var issueId = GetString(issue, "issue_id", "");
@@ -837,7 +837,12 @@
         var oid = GetString(t.p, "id", $"MODEL_{t.idx}");
         return !IsPredictionRejected(t.idx) && !IsObjectRejected(oid) && (!OnlyShowIssues || HasPredictionIssue(t.idx) || HasLabelIssue(oid, t.idx) || IsPredictionAccepted(t.idx) || IsObjectAccepted(oid));
     });
-    private int IssueBoxCount => SelectedIssues.Count(i => !IsIssueRejected(i));
+    private List<JsonElement> ReviewBoxIssues => SelectedIssues
+        .Where(i => !IsIssueRejected(i) && GetIssueBox(i) is not null)
+        .GroupBy(i => GetIssueBox(i)!.Value)
+        .Select(g => g.FirstOrDefault(i => GetString(i, "issue_id", "") == ActiveIssueId) is var active && active.ValueKind == JsonValueKind.Object ? active : g.First())
+        .ToList();
+    private int IssueBoxCount => ReviewBoxIssues.Count;
     private int FrameCount => LabelsJson is null ? 0 : ProfileJson is not null && GetString(ProfileJson.Value, "annotation_format", "") == "coco" ? GetArray(LabelsJson.Value, "images").Count : LabelsJson.Value.ValueKind == JsonValueKind.Array ? LabelsJson.Value.GetArrayLength() : GetArray(LabelsJson.Value, "data").Count;
     private string SelectedModelText
     {
@@ -1436,14 +1441,17 @@
         });
     }
 
+    private static bool IssueIndexMatches(string issueId, string kind, int idx) =>
+        System.Text.RegularExpressions.Regex.IsMatch(issueId, $@":{System.Text.RegularExpressions.Regex.Escape(kind)}:{idx}(?:$|[_:])");
+
     private bool HasPredictionIssue(int idx)
     {
         if (SelectedIssues.Count == 0) return false;
         return SelectedIssues.Any(i => {
             var oid = GetString(i, "object_id", "");
             var issueId = GetString(i, "issue_id", "");
-            if (oid == $"MODEL_{idx}" || oid == $"DUAL_{idx}" || oid == $"ARB_{idx}" || oid == $"SYS_CONSENSUS_{idx}" || oid == $"SYS_GEMINI_{idx}") return true;
-            if (issueId.Contains($":prediction:{idx}") || issueId.Contains($":unlabeled:{idx}_") || issueId.Contains($":unlabeled:_{idx}") || issueId.Contains($":single_unlabeled:{idx}")) return true;
+            if (oid == $"SYS_AI_{idx}" || oid == $"MODEL_{idx}" || oid == $"DUAL_{idx}" || oid == $"ARB_{idx}" || oid == $"SYS_CONSENSUS_{idx}" || oid == $"SYS_GEMINI_{idx}") return true;
+            if (IssueIndexMatches(issueId, "unlabeled", idx) || IssueIndexMatches(issueId, "prediction", idx) || issueId.Contains($":unlabeled:{idx}_") || issueId.Contains($":unlabeled:_{idx}") || IssueIndexMatches(issueId, "single_unlabeled", idx)) return true;
             return false;
         });
     }
@@ -1597,14 +1605,14 @@
     {
         var predId = $"MODEL_{idx}";
         if (IssueDecisions.TryGetValue(ObjectDecisionKey(predId), out var d) && (d == "rejected" || d == "dismissed")) return true;
-        return SelectedIssues.Any(i => (GetString(i, "object_id", "") == predId || GetString(i, "issue_id", "").Contains($":prediction:{idx}")) && (GetIssueDecision(i) == "rejected" || GetIssueDecision(i) == "dismissed"));
+        return SelectedIssues.Any(i => (GetString(i, "object_id", "") == predId || IssueIndexMatches(GetString(i, "issue_id", ""), "prediction", idx)) && (GetIssueDecision(i) == "rejected" || GetIssueDecision(i) == "dismissed"));
     }
 
     private bool IsPredictionAccepted(int idx)
     {
         var predId = $"MODEL_{idx}";
         if (IssueDecisions.TryGetValue(ObjectDecisionKey(predId), out var d) && d == "confirmed") return true;
-        return SelectedIssues.Any(i => (GetString(i, "object_id", "") == predId || GetString(i, "issue_id", "").Contains($":prediction:{idx}")) && GetIssueDecision(i) == "confirmed");
+        return SelectedIssues.Any(i => (GetString(i, "object_id", "") == predId || IssueIndexMatches(GetString(i, "issue_id", ""), "prediction", idx)) && GetIssueDecision(i) == "confirmed");
     }
 
     private bool IsIssueRejected(JsonElement issue)

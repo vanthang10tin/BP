@@ -86,19 +86,10 @@ def is_spatial_match(b1: tuple[float, float, float, float] | list[float],
                      b2: tuple[float, float, float, float] | list[float],
                      match_iou: float = 0.35) -> tuple[bool, float]:
     iou = compute_iou(tuple(b1), tuple(b2))
-    inter = compute_intersection_area(b1, b2)
-    if inter <= 0:
-        return False, 0.0
-    a1 = compute_box_area(b1)
-    a2 = compute_box_area(b2)
-    ioa1 = inter / max(1e-6, a1)
-    ioa2 = inter / max(1e-6, a2)
-    center_in = is_center_inside(b1, b2) or is_center_inside(b2, b1)
-    eff_threshold = min(0.35, float(match_iou or 0.35))
+    # Containment alone is not a match: a road-sized label can enclose
+    # several cars while having almost no overlap with any one object.
+    return bool(iou >= float(match_iou)), float(iou)
 
-    matched = (iou >= eff_threshold) or (ioa1 >= 0.45) or (ioa2 >= 0.45) or (center_in and iou >= 0.20)
-    score = max(iou, 0.8 * min(ioa1, ioa2))
-    return bool(matched), float(score)
 
 
 def is_same_category(cat1: Any, cat2: Any, aliases: dict[str, str] | None = None) -> bool:
@@ -612,9 +603,10 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
         # =========================================================================
         matched_ai_indices = set()
         accounted_ai_indices = set()
-        matched_gt_ids = set()
 
-        for obj in gt_objects:
+        for obj in sorted(gt_objects, key=lambda obj: max(
+                (compute_iou(tuple(obj["box"]), tuple(ai["box"])) for ai in ai_boxes
+                 if is_same_category(obj["category"], ai["category"], aliases)), default=0), reverse=True):
             gt_cat = obj["category"]
             obj_id = str(obj.get("id", ""))
 
@@ -625,7 +617,7 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                 if ai_i in matched_ai_indices:
                     continue
                 same_cat = is_same_category(gt_cat, ai_b["category"], aliases)
-                sp_match, sp_score = is_spatial_match(obj["box"], ai_b["box"], match_iou)
+                sp_match, sp_score = is_spatial_match(obj["box"], ai_b["box"], min(match_iou, 0.25))
                 if same_cat and sp_match:
                     same_cands.append((sp_score, ai_i))
 
@@ -643,25 +635,22 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
 
             best_diff_score, best_diff_idx = max(diff_cands, default=(0.0, -1))
 
-            # 3.1 Cả Người và AI đều thống nhất (Cùng vị trí, Cùng class/synonym) -> PASS TUYỆT ĐỐI!
-            if best_same_idx >= 0 and best_same_score >= best_diff_score:
+            # Prefer same-class association, then check boundary agreement.
+            if best_same_idx >= 0:
                 matched_ai_indices.add(best_same_idx)
                 accounted_ai_indices.add(best_same_idx)
-                matched_gt_ids.add(obj_id)
 
-                # Đánh dấu tất cả các AI box khác cũng bao phủ đối tượng này để không bị báo "bỏ sót"
-                for ai_i, ai_b in enumerate(ai_boxes):
-                    if ai_i != best_same_idx:
-                        sp_match, _ = is_spatial_match(obj["box"], ai_b["box"], 0.20)
-                        if sp_match:
-                            accounted_ai_indices.add(ai_i)
-
-                # Khi Người và AI đã đồng thuận -> xóa các cảnh báo luật/thuộc tính heuristic cũ trên object này
-                if "errors" in result and isinstance(result["errors"], list):
-                    result["errors"] = [
-                        e for e in result["errors"]
-                        if str(e.get("object_id", "")) != obj_id or e.get("error_type") == "BOX_INVERTED"
-                    ]
+                if best_same_score < match_iou:
+                    ai_cand = ai_boxes[best_same_idx]
+                    findings.append({
+                        "issue_id": f"{name}:{obj_id}:MODEL_BOUNDARY_DISAGREEMENT",
+                        "object_id": obj_id, "category": gt_cat,
+                        "severity": "MEDIUM", "error_type": "MODEL_BOUNDARY_DISAGREEMENT",
+                        "explanation": f"Box người và AI cùng lớp nhưng khác biên (IoU={best_same_score:.2f}); cần kiểm tra.",
+                        "action": "Đối chiếu biên với ảnh gốc.", "suggested_box": obj["box"],
+                        "model_box": ai_cand["box"], "iou": best_same_score,
+                        "review_status": "pending", "auto_healable": False,
+                    })
                 continue
 
             # 3.2 Khác nhau về Class (Người gán một đằng, AI xác định một nẻo) -> BOX CẦN REVIEW!
@@ -675,7 +664,7 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                     "severity": "HIGH", "error_type": "MODEL_CLASS_DISAGREEMENT", "qa_layer": "Hội đồng AI",
                     "component": "Hội đồng AI", "model_name": ai_cand.get("model", "Hội đồng AI"),
                     "models_flagged": sorted({m["model"] for m in model_boxes}) or ["YOLO26x", "D-FINE-X"],
-                    "explanation": f"Sai nhãn: Người gán '{gt_cat}', AI xác định '{ai_cat}'.",
+                    "explanation": f"Bất đồng nhãn: Người gán '{gt_cat}', AI xác định '{ai_cat}'.",
                     "action": f"Đổi nhãn thành '{ai_cat}' nếu AI đúng.", "suggested_box": ai_cand["box"],
                     "review_status": "pending", "auto_healable": False,
                     "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")("MODEL_CLASS_DISAGREEMENT", gt_cat) if guideline_manager else ""
@@ -711,19 +700,13 @@ def run_bbox_pipeline(data: Any, images: dict[str, str], profile: dict[str, Any]
                 "severity": "HIGH", "error_type": "POSSIBLE_UNLABELED_OBJECT", "qa_layer": "Hội đồng AI",
                 "component": "Hội đồng AI", "model_name": ai_b.get("model", "Hội đồng AI"),
                 "models_flagged": [ai_b.get("model", "Hội đồng AI")],
-                "explanation": f"Bỏ sót đối tượng '{ai_b['category']}'.",
-                "action": f"Bổ sung nhãn '{ai_b['category']}'.", "suggested_box": ai_b["box"],
+                "explanation": f"Có thể thiếu nhãn đối tượng '{ai_b['category']}'.",
+                "action": f"Kiểm tra ảnh trước khi bổ sung nhãn '{ai_b['category']}'.", "suggested_box": ai_b["box"],
                 "review_status": "pending", "auto_healable": False,
                 "guideline_rule": getattr(guideline_manager, "format_citation", lambda *a: "")("class", ai_b["category"]) if guideline_manager else ""
             })
 
-        # Xóa triệt để mọi lỗi rule/metadata của các object đã được người và AI thống nhất xác nhận
-        if "errors" in result and isinstance(result["errors"], list):
-            result["errors"] = [
-                e for e in result["errors"]
-                if str(e.get("object_id", "")) not in matched_gt_ids or e.get("error_type") == "BOX_INVERTED"
-            ]
-
+        # Model agreement cannot invalidate independent geometry/attribute rules.
         result["model_predictions"] = unified_system_predictions
         result["raw_model_boxes"] = model_boxes
         result["errors"].extend(findings)
@@ -905,7 +888,7 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
             if "SAM" in m_tag:
                 pred_sam[y1:y2 + 1, x1:x2 + 1][roi] = cid
                 mapped_classes_sam.add(canonical)
-            elif "SEGFORMER" not in m_tag:
+            elif "YOLO" in m_tag:
                 pred_yolo[y1:y2 + 1, x1:x2 + 1][roi] = cid
                 mapped_classes_yolo.add(canonical)
 
@@ -934,7 +917,7 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
                                     "intersection_pixels": intersection, "union_pixels": union, "ground_truth_pixels": int(gt_pixels.sum()),
                                     "prediction_pixels": int(pred_pixels.sum()), "prediction_supported": class_name in supported_classes})
 
-            if gt_pixels.any():
+            if gt_pixels.any() or pred_pixels.any():
                 mismatch_y, mismatch_x = np.where(np.logical_xor(gt_pixels, pred_pixels))
                 evidence_box = ([int(mismatch_x.min()), int(mismatch_y.min()), int(mismatch_x.max() + 1), int(mismatch_y.max() + 1)]
                                 if mismatch_x.size else None)
@@ -953,18 +936,24 @@ def run_segmentation_pipeline(records: list[dict[str, Any]], images: dict[str, s
 
                     y_fail = (iou_y < min_iou)
                     s_fail = (iou_s < min_iou)
+                    # Evidence must include the failing source, even when the
+                    # final painted mask matches GT exactly.
+                    disagreement = np.logical_xor(gt_pixels, py_pixels) | np.logical_xor(gt_pixels, ps_pixels)
+                    dy, dx = np.where(disagreement)
+                    evidence_box = [int(dx.min()), int(dy.min()), int(dx.max() + 1), int(dy.max() + 1)] if dx.size else None
+
 
                     # Tình huống 1: Cả 2 cùng bắt lỗi sai viền -> HỘI ĐỒNG ĐỒNG THUẬN
                     if y_fail and s_fail:
                         issues.append({
                             "issue_id": f"{name}:mask-class:{mask_id}", "object_id": f"MASK_CLASS_{mask_id}", "category": class_name,
-                            "severity": "HIGH", "error_type": "SEGMENTATION_CONSENSUS_ERROR",
+                            "severity": "HIGH", "error_type": "SEGMENTATION_BOUNDARY_SUSPECT",
                             "qa_layer": "⚖️ Hội đồng (YOLO26x-Seg + SAM 2.1)",
                             "component": "YOLO26x-Seg + SAM 2.1", "model_name": "YOLO26x-Seg + SAM 2.1 Large",
                             "models_flagged": ["YOLO26x-Seg", "SAM 2.1"],
                             "model_confidence": None, "iou": round(min(iou_y, iou_s), 5), "error_pixels": union - intersection,
-                            "explanation": f"Hội đồng: Lệch viền mask '{class_name}' (IoU {min(iou_y, iou_s):.2f} < {min_iou:.2f}).",
-                            "action": f"Nắn lại biên cho '{class_name}'.", "suggested_box": evidence_box,
+                            "explanation": f"YOLO và SAM dùng prompt từ YOLO cùng khác mask '{class_name}' (IoU {min(iou_y, iou_s):.2f} < {min_iou:.2f}).",
+                            "action": f"Kiểm tra biên '{class_name}' trên ảnh gốc; hai kết quả phụ thuộc cùng detector.", "suggested_box": evidence_box,
                             "review_threshold": min_iou,
                             "guideline_rule": guideline_manager.format_citation("mask", class_name) if guideline_manager else "", "review_status": "pending", "auto_healable": False
                         })

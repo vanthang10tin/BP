@@ -93,3 +93,14 @@ Provenance của lần chạy: file nhãn SHA-256 `28e3c05c04519c813c712278ae68e
 - Full backend suite: `python -m pytest backend -q --basetemp scratch/pytest-final-push` — **112 passed, 3 skipped, 5 subtests passed**; one existing Starlette/httpx deprecation warning. Executed outside the sandbox for Windows asyncio socket support.
 - `dotnet run --no-restore --project tests/BlazorRegression/BlazorRegression.csproj` — passed.
 - Semantic background inference remains dependent on an available semantic provider (the Modal pipeline includes SegFormer); this change does not train new weights or deploy Modal.
+
+
+## 2026-10-19 — review candidate matching and drawing
+
+- Reproduced the supplied frame name `b1c66a42-6f7d68ca.jpg`. `DEMO_PACK/BBOX/annotations.json` contains seven deliberately flawed annotations (including loose, ghost, wrong-class, tiny and duplicate boxes); the number of red candidates alone is not evidence of a rendering defect.
+- Spatial matching now honors the requested IoU instead of accepting containment or clamping every threshold to 0.35. Prefer strongest same-class annotation matches before class conflicts, surface boundary disagreement, and preserve independent rule findings after model agreement.
+- Segmentation reviews prediction-only classes, uses the failing source masks for evidence bounds, and does not call correlated YOLO/SAM output independent consensus. Panoptic outputs no longer masquerade as YOLO masks.
+- The review layer groups identical drawable boxes, counts those regions rather than all findings, and matches prediction IDs exactly (1 cannot select 10). Individual findings remain in the review list.
+- `python -m pytest backend -q --basetemp scratch/pytest-review-final`: **120 passed, 3 skipped, 5 subtests passed**, one existing Starlette/httpx deprecation warning.
+- `dotnet run --no-restore --project tests/BlazorRegression/BlazorRegression.csproj`: passed including region counting and ID regressions.
+- Native CPU replay on the screenshot frame at confidence 0.25: 45 raw detector predictions, 21 merged predictions, 23 review findings with an explicit eight-class profile and no guideline. This is a local smoke run, not reproduction of the remote provider settings or an accuracy benchmark. Browser visual verification has not been performed.

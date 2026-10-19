@@ -22,7 +22,13 @@ var polygonBox = ((double X, double Y, double W, double H)?)Call("GetPredictionB
     Json("{\"type\":\"polygon\",\"points\":[10,10,30,10,30,40,10,40]}"));
 Check(polygonBox == (10d, 10d, 20d, 30d), "Polygon bounds must include every vertex");
 
+Check(!(bool)Call("IssueIndexMatches", null, "frame:prediction:10", "prediction", 1)!, "Prediction 1 must not match 10");
+Check((bool)Call("IssueIndexMatches", null, "frame:unlabeled:1", "unlabeled", 1)!, "Exact unlabeled index must match");
 var home = new Home();
+type.GetField("SelectedFrame", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(home,
+    Json("{\"errors\":[{\"issue_id\":\"a\",\"suggested_box\":[0,0,10,10]},{\"issue_id\":\"b\",\"suggested_box\":[0,0,10,10]},{\"issue_id\":\"no_geometry\"}]}"));
+Check((int)type.GetProperty("IssueBoxCount", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(home)! == 1,
+    "Review box count must deduplicate geometry and exclude findings with no box");
 async Task Upload(params IBrowserFile[] files) => await (Task)Call("OnImagesSelected", home, new InputFileChangeEventArgs(files))!;
 await Upload(Enumerable.Range(0, 201).Select(i => (IBrowserFile)new FakeFile($"{i}.png", 1)).ToArray());
 Check((bool)Field(home, "HasError")! && !(bool)Field(home, "IsBusy")!, "Too many uploads must show an error and unlock controls");
